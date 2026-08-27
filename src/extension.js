@@ -55,6 +55,7 @@ let currentCursorUserIdCache = '';
 let currentCursorEmailCache = '';
 let sqliteModuleCache;
 let sandStatusBar;
+let restartScheduled = false;
 
 const VIEW_ID = 'cursor-account-manager.sidePanel';
 const CONTAINER_ID = 'cursor-account-manager';
@@ -269,7 +270,9 @@ function activate(context) {
         }
     };
     context.subscriptions.push(vscode.commands.registerCommand(CMD_SAND_APPLY, sandApply));
+    context.subscriptions.push(vscode.commands.registerCommand('cursor-account-manager.applyPatch', sandApply));
     context.subscriptions.push(vscode.commands.registerCommand('keepchat.sandApply', sandApply));
+    context.subscriptions.push(vscode.commands.registerCommand('keepchat.applyPatch', sandApply));
     const sandRestore = async () => {
         const ok = await vscode.window.showWarningMessage('确定卸载 Sand 补丁并还原 Cursor 原文件？需要完整退出再打开。', { modal: true }, '卸载');
         if (ok !== '卸载')
@@ -336,15 +339,19 @@ class AccountProvider {
                 fetchCursorUsage();
             }
             if (msg.type === 'openDashboard') {
-                vscode.env.openExternal(vscode.Uri.parse('https://cursor.com/dashboard/spending'));
+                const r = await openAccountDashboard(String(msg.id || ''));
+                if (!r.ok)
+                    vscode.window.showErrorMessage('账号管理：打开控制台失败 - ' + (r.error || ''));
             }
             if (msg.type === 'reloadWindow') {
                 await vscode.commands.executeCommand('workbench.action.reloadWindow');
             }
             if (msg.type === 'restartCursor') {
                 const rr = scheduleCursorRestart();
-                if (!rr.ok)
+                if (!rr.ok) {
                     vscode.window.showErrorMessage('账号管理：自动重启失败 - ' + (rr.error || '') + '。请完整退出并重新打开 Cursor。');
+                    this.post({ type: 'restartFailed', error: rr.error || '' });
+                }
             }
             if (msg.type === 'accountAddCurrent') {
                 const r = await addAccountFromCurrentLogin();
@@ -435,13 +442,7 @@ class AccountProvider {
                     return;
                 }
                 const targetUserId = normUserId(acc.userId);
-                const blob = (acc.authBlob || {});
-                let cookieValue = unquote(blob['cursorAuth/cachedWorkosSessionToken'] || blob['cursorAuth/workosCursorSessionToken'] || '');
-                if (!cookieValue) {
-                    const at = unquote(blob['cursorAuth/accessToken'] || '');
-                    if (targetUserId && at)
-                        cookieValue = targetUserId + '%3A%3A' + at;
-                }
+                const cookieValue = sessionCookieValueOf(acc);
                 if (!cookieValue) {
                     vscode.window.showErrorMessage('账号管理：该账号缺少会话令牌，无法升级');
                     this.postState();
@@ -555,9 +556,21 @@ class AccountProvider {
             if (msg.type === 'accountSetHardLimit') {
                 const mode = String(msg.mode || 'fixed');
                 const limit = mode === 'fixed' ? 10000 : (typeof msg.hardLimit === 'number' ? msg.hardLimit : undefined);
+                const acc = getAccounts().find(a => a.id === msg.id);
+                const who = (acc && acc.email) || msg.id || '该账号';
+                const closing = mode === 'disabled';
+                const confirmLabel = closing ? '关闭超额' : '开启无限超额';
+                if (msg.confirmed !== true) {
+                    const warn = closing
+                        ? ('确定关闭 ' + who + ' 的超额吗？关闭后套餐额度用完就不能再超量使用。')
+                        : ('确定给 ' + who + ' 开启无限超额吗？套餐额度用完后会继续按用量计费，可能产生额外费用。');
+                    const ok = await vscode.window.showWarningMessage(warn, { modal: true }, confirmLabel);
+                    if (ok !== confirmLabel)
+                        return;
+                }
                 const r = await setHardLimitForAccount(String(msg.id || ''), mode, limit);
                 if (r.ok) {
-                    vscode.window.showInformationMessage('账号管理：该账号超额设置已提交');
+                    vscode.window.showInformationMessage('账号管理：' + who + ' 的超额设置已提交');
                     this.postState();
                 }
                 else
@@ -604,20 +617,6 @@ class AccountProvider {
                 }
                 this.postState();
             }
-            if (msg.type === 'sandCopyCommand') {
-                try {
-                    const cmds = sandManualCommands();
-                    const which = String(msg.which || 'restore');
-                    const text = cmds[which] || cmds.restore || '';
-                    if (!text)
-                        throw new Error('没有可复制的命令');
-                    await vscode.env.clipboard.writeText(text);
-                    this.post({ type: 'toast', text: '已复制' + (which === 'apply' ? '注入' : '卸载') + '命令' });
-                }
-                catch (e) {
-                    this.post({ type: 'toast', text: '复制失败：' + (e && e.message || e) });
-                }
-            }
         }
         catch (e) {
             vscode.window.showErrorMessage(e.message || String(e));
@@ -653,6 +652,34 @@ function cursorGlobalStorageDir() {
     return path.join(home, '.config', 'Cursor', 'User', 'globalStorage');
 }
 function findCursorExecutable() {
+    try {
+        const appRoot = vscode.env.appRoot;
+        if (appRoot) {
+            if (process.platform === 'darwin') {
+                const idx = String(appRoot).indexOf('.app/');
+                if (idx > 0)
+                    return String(appRoot).slice(0, idx + 4);
+            }
+            if (process.platform === 'win32') {
+                const exe = path.join(path.dirname(path.dirname(appRoot)), 'Cursor.exe');
+                if (fs.existsSync(exe))
+                    return exe;
+            }
+        }
+    }
+    catch { }
+    try {
+        let cur = process.execPath;
+        for (let i = 0; i < 10 && cur && cur !== path.dirname(cur); i++) {
+            const base = path.basename(cur);
+            if (process.platform === 'darwin' && base === 'Cursor.app')
+                return cur;
+            if (process.platform === 'win32' && /^cursor\.exe$/i.test(base) && !/helper/i.test(cur))
+                return cur;
+            cur = path.dirname(cur);
+        }
+    }
+    catch { }
     if (process.platform === 'win32') {
         const roots = [
             path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Cursor', 'Cursor.exe'),
@@ -665,25 +692,112 @@ function findCursorExecutable() {
         return '/Applications/Cursor.app';
     return 'cursor';
 }
-function scheduleCursorRestart() {
+function findCursorCli() {
+    const dirs = [];
     try {
-        if (process.platform === 'darwin') {
-            (0, child_process_1.spawn)('osascript', ['-e', 'tell application "Cursor" to quit', '-e', 'delay 2', '-e', 'tell application "Cursor" to activate'], { detached: true, stdio: 'ignore' }).unref();
-            return { ok: true };
+        if (vscode.env.appRoot)
+            dirs.push(path.join(vscode.env.appRoot, 'bin'));
+    }
+    catch { }
+    try {
+        dirs.push(path.join(path.dirname(process.execPath), 'bin'));
+    }
+    catch { }
+    try {
+        const app = findCursorExecutable();
+        if (process.platform === 'win32')
+            dirs.push(path.join(path.dirname(app), 'bin'));
+        else if (process.platform === 'darwin')
+            dirs.push(path.join(app, 'Contents', 'Resources', 'app', 'bin'));
+    }
+    catch { }
+    for (const dir of dirs) {
+        try {
+            if (!dir || !fs.existsSync(dir))
+                continue;
+            let files = fs.readdirSync(dir).filter(f => !String(f).includes('-tunnel'));
+            if (process.platform === 'win32')
+                files = files.filter(f => /\.cmd$/i.test(f) && /cursor/i.test(f));
+            else
+                files = files.filter(f => /cursor/i.test(f) && !String(f).includes('.'));
+            if (files.length)
+                return path.join(dir, files[0]);
         }
-        if (process.platform === 'win32') {
-            const exe = findCursorExecutable();
-            const ps = 'Start-Sleep -Seconds 2; Stop-Process -Name Cursor -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; Start-Process -FilePath ' + JSON.stringify(exe);
-            (0, child_process_1.spawn)('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', ps], { detached: true, windowsHide: true, stdio: 'ignore' }).unref();
-            return { ok: true };
-        }
-        const exe = findCursorExecutable();
-        (0, child_process_1.spawn)('/bin/sh', ['-c', 'sleep 2; pkill -x cursor || pkill -f cursor || true; sleep 1; nohup ' + JSON.stringify(exe) + ' >/dev/null 2>&1 &'], { detached: true, stdio: 'ignore' }).unref();
+        catch { }
+    }
+    return findCursorExecutable();
+}
+function readAppNameLong() {
+    try {
+        const p = path.join(vscode.env.appRoot, 'product.json');
+        const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+        if (j && j.nameLong)
+            return String(j.nameLong);
+    }
+    catch { }
+    return 'Cursor';
+}
+// 对齐 vscode-custom-ui-style / zokugun vscode-sync-settings：异步 spawn + detached，禁止 spawnSync（Windows 会 ETIMEDOUT）。
+function scheduleCursorRestart() {
+    if (restartScheduled)
+        return { ok: true };
+    try {
+        let child;
+        if (process.platform === 'win32')
+            child = restartWindows();
+        else if (process.platform === 'darwin')
+            child = restartMacOS();
+        else
+            child = restartLinux();
+        child.on('error', (err) => {
+            restartScheduled = false;
+            const msg = String(err && err.message || err);
+            vscode.window.showErrorMessage('账号管理：自动重启失败 - ' + msg + '。请完整退出并重新打开 Cursor。');
+            provider?.post({ type: 'restartFailed', error: msg });
+        });
+        child.unref();
+        restartScheduled = true;
         return { ok: true };
     }
     catch (e) {
+        restartScheduled = false;
         return { ok: false, error: String(e && e.message || e) };
     }
+}
+function restartWindows() {
+    const binary = findCursorCli();
+    const checkScript = [
+        'for ($i = 0; $i -lt 100; $i++) {',
+        "    $p = Get-Process 'Cursor' -ErrorAction SilentlyContinue;",
+        '    if ($p -eq $null) { exit }',
+        '    Start-Sleep -Milliseconds 100',
+        '}'
+    ].join(' ');
+    const batchScript = 'taskkill /F /IM "Cursor.exe" >nul 2>&1 & powershell -NoProfile -Command "' + checkScript + '" & "' + binary + '"';
+    return (0, child_process_1.spawn)(process.env.ComSpec || 'cmd.exe', ['/C ' + batchScript], {
+        detached: true,
+        stdio: 'ignore',
+        windowsVerbatimArguments: true
+    });
+}
+function restartMacOS() {
+    const nameLong = readAppNameLong();
+    const binary = findCursorCli();
+    return (0, child_process_1.spawn)('osascript', [
+        '-e', 'quit app "' + nameLong + '"',
+        '-e', 'repeat with i from 1 to 100',
+        '-e', 'if not (application "' + nameLong + '" is running) then exit repeat',
+        '-e', 'delay 0.1',
+        '-e', 'end repeat',
+        '-e', 'do shell script quoted form of "' + binary.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
+    ], { detached: true, stdio: 'ignore' });
+}
+function restartLinux() {
+    const binary = findCursorCli();
+    const pid = Number(process.env.VSCODE_PID || process.env.CURSOR_PID || 0);
+    if (!Number.isInteger(pid) || pid <= 0)
+        throw new Error('无法确定 Cursor 主进程，请自己完全退出再打开');
+    return (0, child_process_1.spawn)('/bin/sh', ['-c', 'kill "' + pid + '" 2>/dev/null || exit 1; c=0; while kill -0 "' + pid + '" 2>/dev/null && [ $c -lt 100 ]; do sleep 0.1; c=$((c+1)); done; ' + JSON.stringify(binary)], { detached: true, stdio: 'ignore' });
 }
 function loadCursorSqlite() {
     if (sqliteModuleCache !== undefined)
@@ -1456,6 +1570,40 @@ async function deepLoginViaInjectedBrowser(cookieValue) {
         }
         catch { }
     }
+}
+function sessionCookieValueOf(acc) {
+    if (!acc)
+        return '';
+    const blob = (acc.authBlob || {});
+    let cookieValue = unquote(blob['cursorAuth/cachedWorkosSessionToken'] || blob['cursorAuth/workosCursorSessionToken'] || '');
+    if (!cookieValue) {
+        const at = unquote(blob['cursorAuth/accessToken'] || '');
+        const uid = normUserId(acc.userId || blob['cursorAuth/userId'] || '');
+        if (uid && at)
+            cookieValue = uid + '%3A%3A' + at;
+    }
+    return cookieValue;
+}
+// 进控制台：隔离浏览器 + 注入该账号 cookie，打开 spending，浏览器留给用户关。
+async function openAccountDashboard(id) {
+    const list = getAccounts();
+    const acc = (id && list.find(a => a.id === id)) || list.find(a => a.id === resolveCurrentAccountId()) || null;
+    let cookieValue = sessionCookieValueOf(acc);
+    if (!cookieValue) {
+        const auth = await readCursorAuth();
+        if (auth && auth.userId && auth.accessToken)
+            cookieValue = normUserId(auth.userId) + '%3A%3A' + auth.accessToken;
+    }
+    if (!cookieValue)
+        return { ok: false, error: '该账号缺少会话令牌，无法注入浏览器' };
+    const launched = await (0, cdpBrowser_1.launchInjectedBrowser)({
+        cookieValue,
+        startUrl: 'https://cursor.com/dashboard/spending',
+        keepOpen: true
+    });
+    if (!launched.ok)
+        return { ok: false, error: launched.error || '启动隔离浏览器失败' };
+    return { ok: true };
 }
 function cursorHardLimitBody(mode, limitDollars) {
     if (mode === 'disabled')
@@ -2356,36 +2504,11 @@ function pickRestoreStateRoot(appRoot) {
     }
     return path.join(sandGlobalStorageDir(), 'leila-local.cursor-sand-router');
 }
-function shellQuote(value) {
-    return "'" + String(value || '').replace(/'/g, "'\\''") + "'";
-}
-function sandCliPath() {
-    const ext = extensionContext && extensionContext.extensionPath;
-    if (ext)
-        return path.join(ext, 'dist', 'sandCli.js');
-    return path.join(__dirname, 'sandCli.js');
-}
-function sandManualCommands() {
-    const cli = sandCliPath();
-    const app = sandAppRoot() || sandPatcher.defaultAppRoot();
-    const applyRoot = sandStateRoot();
-    const restoreRoot = pickRestoreStateRoot(app);
-    return {
-        cli,
-        appRoot: app,
-        applyStateRoot: applyRoot,
-        restoreStateRoot: restoreRoot,
-        status: 'node ' + shellQuote(cli) + ' status --app-root ' + shellQuote(app),
-        apply: 'node ' + shellQuote(cli) + ' apply --app-root ' + shellQuote(app) + ' --state-root ' + shellQuote(applyRoot),
-        restore: 'node ' + shellQuote(cli) + ' restore --force --app-root ' + shellQuote(app) + ' --state-root ' + shellQuote(restoreRoot)
-    };
-}
 function sandStatusForClient() {
-    const cmds = (() => { try { return sandManualCommands(); } catch { return { status: '', apply: '', restore: '' }; } })();
     try {
         const root = sandAppRoot();
         if (!root)
-            return { patched: false, version: '', sand: 0, unpatched: 0, error: '未找到 Cursor 安装目录', auto: sandAutoPatchEnabled(), commands: cmds };
+            return { patched: false, version: '', sand: 0, unpatched: 0, error: '未找到 Cursor 安装目录', auto: sandAutoPatchEnabled() };
         const s = sandPatcher.inspect(root);
         return {
             patched: !!s.patched,
@@ -2393,13 +2516,11 @@ function sandStatusForClient() {
             sand: (s.totals && s.totals.sandAssignments) || 0,
             unpatched: (s.totals && s.totals.unpatchedAssignments) || 0,
             error: '',
-            auto: sandAutoPatchEnabled(),
-            restoreRoot: cmds.restoreStateRoot || '',
-            commands: cmds
+            auto: sandAutoPatchEnabled()
         };
     }
     catch (e) {
-        return { patched: false, version: '', sand: 0, unpatched: 0, error: (e && e.message) || String(e), auto: sandAutoPatchEnabled(), commands: cmds };
+        return { patched: false, version: '', sand: 0, unpatched: 0, error: (e && e.message) || String(e), auto: sandAutoPatchEnabled() };
     }
 }
 function sandAutoPatchEnabled() {
@@ -2470,7 +2591,7 @@ async function restoreSandPatchFromUi() {
             lastErr = e;
         }
     }
-    throw lastErr || new Error('没有找到可回滚的备份。可用面板里的「复制卸载命令」手动指定 --state-root');
+    throw lastErr || new Error('没有找到可回滚的备份');
 }
 function promptSandRestart(kind) {
     provider?.post({

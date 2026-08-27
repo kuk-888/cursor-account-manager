@@ -339,7 +339,9 @@ class WsCdp {
         catch { }
     } }
 }
-// 起隔离浏览器、注入 cookie、导航到授权页。成功返回 close()（轮询结束后调用以关浏览器+清临时目录）。
+// 起隔离浏览器、注入 cookie、导航到 startUrl（升级授权用 loginUrl，进控制台用 dashboard）。
+// keepOpen=false：返回 close()，调用方轮询结束后关浏览器并清临时目录。
+// keepOpen=true：浏览器留给用户关，进程退出后再清临时目录。
 async function launchInjectedBrowser(opts) {
     const noop = () => { };
     const exe = findBrowserPath();
@@ -403,8 +405,16 @@ async function launchInjectedBrowser(opts) {
         await cdp.send('Network.enable', {});
         // 注入会话 cookie（domain 形式，与页面上下文无关）。值即 userId%3A%3AaccessToken。
         await cdp.send('Network.setCookie', { name: 'WorkosCursorSessionToken', value: opts.cookieValue, domain: '.cursor.com', path: '/', secure: true });
-        // 已登录态下打开授权页 → 服务端自动回调或仅需点一下「Authorize」；扩展侧轮询 /auth/poll 拿令牌。
-        await cdp.send('Page.navigate', { url: opts.loginUrl });
+        const startUrl = opts.startUrl || opts.loginUrl;
+        await cdp.send('Page.navigate', { url: startUrl });
+        if (opts.keepOpen) {
+            try {
+                cdp.close();
+            }
+            catch { }
+            proc.on('exit', () => rmDirBestEffort(userDataDir));
+            return { ok: true, close: noop };
+        }
         return { ok: true, close: () => { try {
                 cdp.close();
             }
