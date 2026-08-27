@@ -2,7 +2,7 @@
   "name": "cursor-account-manager",
   "displayName": "Cursor 账号管理",
   "description": "Cursor 多账号管理：切换账号、管理登录态、查看额度、踢设备、提取本机/浏览器 token，并把客户端类型改为 sand，方便在 Cursor 里用 Grok Bot。",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "publisher": "local",
   "license": "MIT",
   "repository": {

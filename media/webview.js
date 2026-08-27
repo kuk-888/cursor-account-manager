@@ -6,6 +6,8 @@
   let toastTimer = null;
   let retryRestart = null;
   let lastRenderSig = '';
+  let activeTab = 'accounts';
+  let openMenuId = '';
 
   const app = document.getElementById('app');
   app.innerHTML = '<div class="empty"><div><strong>正在加载账号</strong><span>请稍候...</span></div></div>';
@@ -100,29 +102,26 @@
     if (h >= 1) return h + '小时后重置';
     return '即将重置';
   }
-  function quotaBar(label, value, hint) {
-    if (value == null || !Number.isFinite(Number(value))) {
-      return '<div class="qItem"><div class="qRow"><span>' + esc(label) + '</span><i class="muted">—</i></div><div class="qBar"><b style="width:0%"></b></div></div>';
-    }
-    const n = Math.max(0, Math.min(100, Number(value)));
-    const shown = (Math.round(n * 10) / 10) + '%';
-    return '<div class="qItem"><div class="qRow"><span>' + esc(label) + '</span><i>' + shown + '</i>'
-      + (hint ? '<em>' + esc(hint) + '</em>' : '') + '</div>'
-      + '<div class="qBar' + pctCls(n) + '"><b style="width:' + n + '%"></b></div></div>';
-  }
-  function acctQuotaBox(x) {
-    if (x.usageError) return '<div class="acctLine2"><span class="muted">⚠ ' + esc(x.usageError) + '</span></div>';
-    const has = x.autoPercent != null || x.otherPercent != null || x.botPercent != null;
-    if (!has) return '<div class="acctLine2"><span class="muted">点「刷新」读取 Auto / Other / Bot</span>' + acctAddedText(x) + '</div>';
-    return '<div class="quotaBox">'
-      + quotaBar('Auto', x.autoPercent, resetHint(x.cycleEnd))
-      + quotaBar('Other', x.otherPercent, '')
-      + (x.botHasLimit || x.botPercent != null ? quotaBar('Bot', x.botPercent, resetHint(x.botResetAt)) : quotaBar('Bot', null, '无周额度'))
-      + (x.userTail || x.addedAt ? '<div class="qMeta"><span class="uidTail">' + esc(x.userTail || '?') + '</span>' + acctAddedText(x) + '</div>' : '')
+  function quotaCol(label, value, hint) {
+    const empty = value == null || !Number.isFinite(Number(value));
+    const n = empty ? 0 : Math.max(0, Math.min(100, Number(value)));
+    const shown = empty ? '—' : ((Math.round(n * 10) / 10) + '%');
+    return '<div class="qCol">'
+      + '<div class="qTop"><span>' + esc(label) + '</span><i>' + shown + '</i></div>'
+      + '<div class="qBar' + (empty ? '' : pctCls(n)) + '"><b style="width:' + (empty ? 0 : n) + '%"></b></div>'
+      + '<div class="qHint">' + (hint ? esc(hint) : '') + '</div>'
       + '</div>';
   }
-  function acctIconBtn(action, id, icon, title, cls, disabled) {
-    return '<button class="btn sm ic' + (cls ? ' ' + cls : '') + '" data-action="' + action + '" data-id="' + attr(id) + '" title="' + attr(title) + '" aria-label="' + attr(title) + '"' + (disabled ? ' disabled' : '') + '>' + icon + '</button>';
+  function acctQuotaRow(x) {
+    if (x.usageError) return '<div class="acctLine2"><span class="muted">⚠ ' + esc(x.usageError) + '</span></div>';
+    const has = x.autoPercent != null || x.otherPercent != null || x.botPercent != null;
+    if (!has) return '<div class="acctLine2"><span class="muted">点刷新读取 Auto / Other / Bot</span></div>';
+    const botHint = (x.botHasLimit || x.botPercent != null) ? resetHint(x.botResetAt) : '无周额度';
+    return '<div class="quotaRow">'
+      + quotaCol('Auto', x.autoPercent, resetHint(x.cycleEnd))
+      + quotaCol('Other', x.otherPercent, '')
+      + quotaCol('Grok Bot', (x.botHasLimit || x.botPercent != null) ? x.botPercent : null, botHint)
+      + '</div>';
   }
   function acctPlanBadge(x) {
     const p = String((x && (x.type || x.plan || x.planLabel)) || '').toLowerCase();
@@ -134,11 +133,6 @@
     else if (p.includes('business') || p.includes('team') || p.includes('enterprise')) { label = 'Business'; cls = 'biz'; }
     return '<span class="tag plan ' + cls + '">' + esc(label) + '</span>';
   }
-  function acctAddedText(x) {
-    if (!x.addedAt) return '';
-    const t = rel(x.addedAt);
-    return t ? '<span class="acctAdded" title="添加时间">' + esc(t) + '导入</span>' : '';
-  }
   function acctOverageToggle(x) {
     if (isFreePlan(x)) return '';
     const on = x.usageBased === true;
@@ -146,18 +140,19 @@
     const title = on ? '点击关闭超额' : '点击开启无限超额';
     return '<button class="acctOverage' + (on ? ' on' : '') + '" data-action="acctOverageToggle" data-id="' + attr(x.id) + '" data-mode="' + (on ? 'disabled' : 'unlimited') + '" title="' + attr(title) + '"><span></span>' + label + '</button>';
   }
-
-  function currentBar() {
-    const account = (state && state.account) || {};
-    return '<div class="account">'
-      + '<span class="avatar sm">' + esc((account.email || account.label || 'L').slice(0, 1).toUpperCase()) + '</span>'
-      + '<b class="acctEmail" title="' + attr(account.email || account.label || '') + '">' + esc(account.email || account.label || '本地用户') + '</b>'
-      + '<span class="tag' + (account.plan ? ' plan' : '') + '">' + esc(account.planLabel || account.plan || '本地模式') + '</span>'
-      + (account.error ? '<span class="acctMini err" title="' + attr(account.error) + '">⚠</span>' : (account.usageShort ? '<span class="acctMini" title="' + attr(account.usageText || '') + '">' + esc(account.usageShort) + '</span>' : ''))
-      + '<span class="topSpacer"></span>'
-      + '<button class="acctRefresh" data-action="refreshAccount" title="刷新当前账号用量"' + (account.loading ? ' disabled' : '') + '>' + (account.loading ? '…' : '↻') + '</button>'
-      + (currentAccountId() ? '<button class="acctBtn" data-action="acctSessions" data-id="' + attr(currentAccountId()) + '" title="查看当前账号登录设备">设备</button>' : '')
-      + '<button class="acctBtn" data-action="openDashboard" title="打开 cursor.com/dashboard/spending">控制台</button>'
+  function moreMenu(x) {
+    const open = openMenuId === x.id;
+    const renewAction = (x.noRefresh || x.tokenType === 'web') ? 'acctUpgradeToken' : 'acctRefreshToken';
+    const renewLabel = (x.noRefresh || x.tokenType === 'web') ? '升级授权' : '令牌续期';
+    return '<div class="moreWrap">'
+      + '<button class="toolBtn moreBtn" data-action="acctMore" data-id="' + attr(x.id) + '" title="更多">更多</button>'
+      + (open ? '<div class="moreMenu" data-stop="1">'
+        + '<button data-action="' + renewAction + '" data-id="' + attr(x.id) + '">' + esc(renewLabel) + '</button>'
+        + '<button data-action="acctDashboard" data-id="' + attr(x.id) + '">进控制台</button>'
+        + '<button data-action="acctSessions" data-id="' + attr(x.id) + '">查看设备</button>'
+        + '<button data-action="acctSwitch" data-id="' + attr(x.id) + '">切换账号</button>'
+        + '<button class="danger" data-action="acctRemove" data-id="' + attr(x.id) + '">从列表移除</button>'
+      + '</div>' : '')
       + '</div>';
   }
 
@@ -166,26 +161,89 @@
     if (!accts.length) return '<div class="acctEmpty">暂无账号。用上方三个按钮添加。</div>';
     return accts.map(function (x) {
       const isWeb = (x.tokenType === 'web' || x.noRefresh) && x.source !== 'currentLogin';
-      return '<div class="acctCard compact' + (x.isCurrent ? ' cur' : '') + '">'
-        + '<div class="acctMain">'
-          + '<div class="acctLine1"><b title="' + attr(x.email || '') + '">' + esc(x.email || '(未知邮箱)') + '</b>'
+      return '<div class="acctCard' + (x.isCurrent ? ' cur' : '') + '">'
+        + '<div class="acctTop">'
+          + '<div class="acctId"><b title="' + attr(x.email || '') + '">' + esc(x.email || '(未知邮箱)') + '</b>'
             + acctPlanBadge(x)
             + (x.isCurrent ? '<span class="usingPill">使用中</span>' : '')
           + '</div>'
-          + acctQuotaBox(x)
-          + (isWeb ? '<div class="acctWarn">Web 令牌只读、无法续期，发消息可能弹登录框，建议改用「浏览器授权」</div>' : '')
-        + '</div>'
-        + '<div class="acctOps">'
-          + acctOverageToggle(x)
-          + '<div class="acctBtnRow">'
-            + acctIconBtn('acctSessions', x.id, '◎', '登录设备 / 踢下线' + (x.sessionCount != null ? '（' + x.sessionCount + '）' : ''), '', false)
-            + acctIconBtn('acctRefreshOne', x.id, '↻', '刷新该账号额度', '', false)
-            + (x.noRefresh || x.tokenType === 'web' ? acctIconBtn('acctUpgradeToken', x.id, '↑', '升级为可续期账号', '', false) : acctIconBtn('acctRefreshToken', x.id, '⟳', '续期该账号令牌', '', false))
-            + (x.isCurrent ? acctIconBtn('', x.id, '✓', '当前 Cursor 登录账号', 'ghost on', true) : acctIconBtn('acctSwitch', x.id, '⇄', '切换为 Cursor 全局登录', 'primary', false))
-            + acctIconBtn('acctRemove', x.id, '✕', '从列表移除', 'danger', false)
+          + '<div class="acctTools">'
+            + '<button class="toolBtn" data-action="acctRefreshOne" data-id="' + attr(x.id) + '" title="刷新该账号额度">刷新</button>'
+            + acctOverageToggle(x)
+            + moreMenu(x)
           + '</div>'
-        + '</div></div>';
+        + '</div>'
+        + acctQuotaRow(x)
+        + (isWeb ? '<div class="acctWarn">Web 令牌只读、无法续期，发消息可能弹登录框</div>' : '')
+      + '</div>';
     }).join('');
+  }
+
+  function tabBar() {
+    return '<div class="tabs">'
+      + '<button class="tab' + (activeTab === 'accounts' ? ' on' : '') + '" data-action="switchTab" data-tab="accounts">账号管理</button>'
+      + '<button class="tab' + (activeTab === 'grok' ? ' on' : '') + '" data-action="switchTab" data-tab="grok">Grok Bot</button>'
+      + '<span class="ver">' + esc((state && state.version) || '') + '</span>'
+      + '</div>';
+  }
+
+  function accountsPage() {
+    const accts = (state && state.accounts) || [];
+    return '<div class="page">'
+      + '<div class="acctAddRow">'
+        + '<button class="btn primary acctAddBtn" data-action="acctDeepLogin">浏览器授权</button>'
+        + '<button class="btn acctAddBtn" data-action="acctTokenDialog">Token 导入</button>'
+        + '<button class="btn acctAddBtn" data-action="acctAddCurrent" title="读取本机 Cursor 当前登录态">导入本机</button>'
+      + '</div>'
+      + '<p class="acctAddHint">推荐浏览器授权（可续期）。切换后必须完整退出 Cursor 再打开，Reload 不够。</p>'
+      + '<div class="acctSecHead"><h4>账号列表</h4><span class="acctCount">' + accts.length + '</span></div>'
+      + '<div class="acctList">' + accountCards() + '</div>'
+      + '</div>';
+  }
+
+  function grokBotRows() {
+    const accts = (state && state.accounts) || [];
+    if (!accts.length) return '<div class="acctEmpty">先在「账号管理」里加号，再看各账号 Bot 额度。</div>';
+    return accts.map(function (x) {
+      const hint = (x.botHasLimit || x.botPercent != null) ? resetHint(x.botResetAt) : '无周额度';
+      return '<div class="botRow' + (x.isCurrent ? ' cur' : '') + '">'
+        + '<b title="' + attr(x.email || '') + '">' + esc(x.email || '(未知)') + '</b>'
+        + quotaCol('Grok Bot', (x.botHasLimit || x.botPercent != null) ? x.botPercent : null, hint)
+        + '</div>';
+    }).join('');
+  }
+
+  function sandCard() {
+    const s = (state && state.sand) || {};
+    const on = !!s.patched && !s.error;
+    const badge = s.error ? '异常' : (on ? '已注入' : ((s.sand || 0) > 0 ? '部分注入' : '未注入'));
+    const badgeCls = s.error ? 'err' : (on ? 'on' : ((s.sand || 0) > 0 ? 'warn' : 'off'));
+    const detail = s.error
+      ? esc(s.error)
+      : (on
+        ? ('已注入 · Cursor ' + esc(s.version || '?') + ' · ' + esc(s.sand || 0) + ' 处请求头为 sand')
+        : ((s.sand || 0) > 0
+          ? ('部分注入 · 已改 ' + esc(s.sand || 0) + ' / 未改 ' + esc(s.unpatched || 0))
+          : ('未注入 · 还有 ' + esc(s.unpatched || 0) + ' 处仍是 ide')));
+    return '<div class="sandCard' + (on ? ' on' : '') + '">'
+      + '<div class="sandHead"><h4>Sand 注入</h4><span class="sandBadge ' + badgeCls + '">' + badge + '</span></div>'
+      + '<p class="sandHint">注入后 Cursor 请求头变成 <code>sand</code>，对话走 Bot 额度，才能选 Grok Bot。写完必须完整退出再打开。</p>'
+      + '<div class="sandBtns">'
+        + '<button class="btn primary" data-action="sandApplyAsk"' + (on ? ' disabled' : '') + '>一键注入</button>'
+        + '<button class="btn danger" data-action="sandRestoreAsk">一键卸载</button>'
+        + '<button class="btn" data-action="sandRefresh">刷新状态</button>'
+      + '</div>'
+      + '<div class="sandBtns"><button class="btn sm" data-action="sandCmdsAsk">手动命令</button></div>'
+      + '<div class="sandMeta">' + detail + '</div>'
+      + '</div>';
+  }
+
+  function grokPage() {
+    return '<div class="page">'
+      + sandCard()
+      + '<div class="acctSecHead"><h4>各账号 Bot 额度</h4></div>'
+      + '<div class="botList">' + grokBotRows() + '</div>'
+      + '</div>';
   }
 
   function sandCmdBlock(which, title, hint, cmd) {
@@ -205,20 +263,20 @@
     }
     if (dialog.type === 'confirmSandRestore') {
       return '<div class="modal" data-action="cancelDialog"><div class="dialog" data-stop="1"><h3>卸载 Sand</h3>'
-        + '<p class="restartMsg">会 <code>restore --force</code>，并自动找独立插件备份目录 <code>leila-local.cursor-sand-router</code>。卸完必须完整退出再打开。也可复制命令到终端手动跑。</p>'
+        + '<p class="restartMsg">会 <code>restore --force</code> 还原备份。卸完必须完整退出再打开。也可复制命令到终端手动跑。</p>'
         + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">取消</button><button class="btn danger" data-action="sandRestoreConfirm">一键卸载</button></div></div></div>';
     }
     if (dialog.type === 'sandCmds') {
       const cmds = (state && state.sand && state.sand.commands) || {};
       return '<div class="modal" data-action="cancelDialog"><div class="dialog wide" data-stop="1"><h3>手动命令</h3>'
-        + '<p class="dialogHint">和面板一键按钮做的是同一件事。复制后打开「终端」粘贴回车，跑完必须完整退出 Cursor 再打开（Reload 不够）。</p>'
-        + sandCmdBlock('apply', '注入命令', '等价于「一键注入」。把 Cursor 请求头改成 sand，走 Bot 池。先备份再写。', cmds.apply)
-        + sandCmdBlock('restore', '卸载命令', '等价于「一键卸载」。带 --force，并指向有备份的目录（含独立插件 leila-local.cursor-sand-router）。', cmds.restore)
+        + '<p class="dialogHint">和面板一键按钮做的是同一件事。复制后打开「终端」粘贴回车，跑完必须完整退出 Cursor 再打开。</p>'
+        + sandCmdBlock('apply', '注入命令', '等价于「一键注入」。把 Cursor 请求头改成 sand，走 Bot 池。', cmds.apply)
+        + sandCmdBlock('restore', '卸载命令', '等价于「一键卸载」。带 --force。', cmds.restore)
         + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">关闭</button></div></div></div>';
     }
     if (dialog.type === 'confirmSwitch') {
       return '<div class="modal" data-action="cancelDialog"><div class="dialog" data-stop="1"><h3>切换账号</h3>'
-        + '<p class="restartMsg">确定切换 Cursor 全局登录账号到 ' + esc(dialog.email || dialog.id || '') + ' 吗？会自动备份并替换登录态，完成后需要完整重启 Cursor。</p>'
+        + '<p class="restartMsg">确定切换 Cursor 全局登录账号到 ' + esc(dialog.email || dialog.id || '') + ' 吗？会自动备份并替换登录态，完成后需要完整重启 Cursor。当前已是该号也可以再切一次。</p>'
         + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">取消</button><button class="btn primary" data-action="confirmAccountSwitch">切换账号</button></div></div></div>';
     }
     if (dialog.type === 'acctImport') {
@@ -253,32 +311,6 @@
     return '';
   }
 
-  function sandCard() {
-    const s = (state && state.sand) || {};
-    const on = !!s.patched && !s.error;
-    const badge = s.error ? '异常' : (on ? '已注入' : ((s.sand || 0) > 0 ? '部分注入' : '未注入'));
-    const badgeCls = s.error ? 'err' : (on ? 'on' : ((s.sand || 0) > 0 ? 'warn' : 'off'));
-    const detail = s.error
-      ? esc(s.error)
-      : (on
-        ? ('当前已注入：Cursor ' + esc(s.version || '?') + '，' + esc(s.sand || 0) + ' 处请求头都是 sand')
-        : ((s.sand || 0) > 0
-          ? ('部分注入：Cursor ' + esc(s.version || '?') + '，已改 ' + esc(s.sand || 0) + ' / 未改 ' + esc(s.unpatched || 0))
-          : ('当前未注入：Cursor ' + esc(s.version || '?') + '，还有 ' + esc(s.unpatched || 0) + ' 处是 ide')));
-    return '<div class="sandCard' + (on ? ' on' : '') + '">'
-      + '<div class="sandHead"><h4>Sand 路由</h4><span class="sandBadge ' + badgeCls + '">' + badge + '</span></div>'
-      + '<p class="sandHint">右上角徽章就是注入状态。平时点一键即可；要自己在终端跑，用「手动命令」。</p>'
-      + '<div class="sandBtns">'
-        + '<button class="btn primary" data-action="sandApplyAsk"' + (on ? ' disabled' : '') + '>一键注入</button>'
-        + '<button class="btn danger" data-action="sandRestoreAsk">一键卸载</button>'
-        + '<button class="btn" data-action="sandRefresh">刷新状态</button>'
-      + '</div>'
-      + '<div class="sandBtns">'
-        + '<button class="btn sm" data-action="sandCmdsAsk">手动命令</button>'
-      + '</div>'
-      + '<div class="sandMeta">' + detail + '</div>'
-      + '</div>';
-  }
   function retryRestartHtml() {
     if (!retryRestart) return '';
     const restartTitle = (retryRestart.action === 'sandPatch') ? '需要完整重启' : '切换成功';
@@ -290,20 +322,9 @@
 
   function render() {
     if (!state) return;
-    const accts = state.accounts || [];
     app.innerHTML = '<div class="app">'
-      + '<div class="page">'
-        + '<div class="acctAddRow">'
-          + '<button class="btn primary acctAddBtn" data-action="acctDeepLogin">浏览器授权</button>'
-          + '<button class="btn acctAddBtn" data-action="acctTokenDialog">Token 导入</button>'
-          + '<button class="btn acctAddBtn" data-action="acctAddCurrent" title="读取本机 Cursor 当前登录态">导入本机</button>'
-        + '</div>'
-        + '<p class="acctAddHint">推荐「浏览器授权」，拿到可续期令牌。切换账号会写入 Cursor 登录态，完整重启一次即可生效。</p>'
-        + sandCard()
-        + '<div class="acctSecHead"><h4>账号列表</h4><span class="acctCount">' + accts.length + '</span>'
-          + '<span class="ver">' + esc(state.version || '') + '</span></div>'
-        + '<div class="acctList compact">' + accountCards() + '</div>'
-      + '</div>'
+      + tabBar()
+      + (activeTab === 'grok' ? grokPage() : accountsPage())
       + dialogHtml()
       + retryRestartHtml()
       + (toast ? '<div class="toast">' + esc(toast) + '</div>' : '')
@@ -323,10 +344,33 @@
       e.stopPropagation();
       handleAction(action, el);
     }));
+    document.addEventListener('click', onDocClick, { once: true });
+  }
+
+  function onDocClick(e) {
+    if (!openMenuId) return;
+    if (e.target.closest && e.target.closest('.moreWrap')) return;
+    openMenuId = '';
+    render();
   }
 
   function handleAction(action, el) {
     switch (action) {
+      case 'switchTab':
+        activeTab = el.getAttribute('data-tab') === 'grok' ? 'grok' : 'accounts';
+        openMenuId = '';
+        render();
+        break;
+      case 'acctMore': {
+        const id = el.getAttribute('data-id') || '';
+        openMenuId = openMenuId === id ? '' : id;
+        render();
+      } break;
+      case 'acctDashboard':
+        post('openDashboard', { id: el.getAttribute('data-id') });
+        openMenuId = '';
+        showToast('正在打开 Cursor 控制台…');
+        break;
       case 'refreshAccount': post('refreshAccount'); showToast('正在刷新当前用量...'); break;
       case 'openDashboard': post('openDashboard'); break;
       case 'acctTokenDialog': dialog = { type: 'acctImport', draft: '' }; render(); break;
@@ -340,12 +384,13 @@
         render();
       } break;
       case 'acctDeepLogin': post('accountDeepLogin', {}); showToast('即将打开浏览器登录 Cursor...'); break;
-      case 'acctUpgradeToken': post('accountUpgradeToken', { id: el.getAttribute('data-id') }); showToast('即将打开浏览器升级该账号...'); break;
+      case 'acctUpgradeToken': openMenuId = ''; post('accountUpgradeToken', { id: el.getAttribute('data-id') }); showToast('即将打开浏览器升级该账号...'); break;
       case 'acctAddCurrent': post('accountAddCurrent', {}); showToast('正在读取本机 Cursor 登录态...'); break;
-      case 'acctRefreshToken': post('accountRefreshToken', { id: el.getAttribute('data-id') }); showToast('正在续期该账号令牌...'); break;
+      case 'acctRefreshToken': openMenuId = ''; post('accountRefreshToken', { id: el.getAttribute('data-id') }); showToast('正在续期该账号令牌...'); break;
       case 'acctSwitch': {
         const id = el.getAttribute('data-id');
         const acc = (state.accounts || []).find((x) => x.id === id) || {};
+        openMenuId = '';
         dialog = { type: 'confirmSwitch', id, email: acc.email || '' };
         render();
       } break;
@@ -357,11 +402,12 @@
         dialog = null;
         render();
         break;
-      case 'acctRemove': post('accountRemove', { id: el.getAttribute('data-id') }); showToast('已移除账号'); break;
+      case 'acctRemove': openMenuId = ''; post('accountRemove', { id: el.getAttribute('data-id') }); showToast('已移除账号'); break;
       case 'acctRefreshOne': post('accountRefreshOne', { id: el.getAttribute('data-id') }); showToast('正在联网刷新该账号...'); break;
       case 'acctSessions': {
         const id = el.getAttribute('data-id') || currentAccountId();
         const acc = (state.accounts || []).find((x) => x.id === id) || {};
+        openMenuId = '';
         dialog = { type: 'sessions', accountId: id, email: acc.email || '', sessions: [], loading: true, error: '', confirmKick: '' };
         post('accountListSessions', { id });
         render();

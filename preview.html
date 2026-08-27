@@ -3,18 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cursor Account Manager · 界面预览</title>
+  <title>账号管理 · 界面预览</title>
   <link rel="stylesheet" href="media/webview.css">
   <style>
-    body{display:flex;flex-direction:column}
+    body{display:flex;flex-direction:column;background:#07090d}
     .previewBar{flex:none;padding:10px 14px;background:#0b0e14;border-bottom:1px solid #30394a;color:#9aa4b8;font:12px/1.4 sans-serif}
     .previewBar b{color:#ecf2ff}
-    #app{flex:1;min-height:0}
+    .stage{flex:1;min-height:0;display:flex;justify-content:center;padding:16px}
+    .phone{width:360px;max-width:100%;height:min(760px, calc(100vh - 72px));border:1px solid #30394a;border-radius:12px;overflow:hidden;box-shadow:0 16px 40px rgba(0,0,0,.35)}
+    #app{height:100%}
   </style>
 </head>
 <body>
-  <div class="previewBar">这是<strong>界面预览</strong>，按钮不会真切号。真功能请把 VSIX 装进本机 Cursor。</div>
-  <div id="app"></div>
+  <div class="previewBar">这是<strong>界面预览</strong>，按钮不会真切号。侧栏宽度按插件面板模拟。真功能请装 VSIX。</div>
+  <div class="stage"><div class="phone"><div id="app"></div></div></div>
   <script>
     window.acquireVsCodeApi = function () {
       return {
@@ -30,40 +32,38 @@
     window.postMessage({
       type: 'state',
       state: {
-        version: '5.3.5-preview',
+        version: '2.2.0-preview',
         sand: {
-          patched: true, version: '3.4.20', sand: 5, unpatched: 0, error: '',
+          patched: false, version: '3.4.20', sand: 0, unpatched: 5, error: '',
           commands: {
             apply: "node '/path/sandCli.js' apply --app-root '/Applications/Cursor.app/Contents/Resources/app'",
-            restore: "node '/path/sandCli.js' restore --force --app-root '/Applications/Cursor.app/Contents/Resources/app' --state-root '$HOME/Library/Application Support/Cursor/User/globalStorage/local.cursor-account-manager'"
+            restore: "node '/path/sandCli.js' restore --force --app-root '/Applications/Cursor.app/Contents/Resources/app'"
           }
         },
-        account: {
-          email: 'you@example.com',
-          label: 'you',
-          plan: 'ultra',
-          planLabel: 'Ultra',
-          usageShort: 'A67 O100 B88',
-          usageText: 'A67 O100 B88',
-          usagePct: 67,
-          loading: false,
-          error: '',
-          enabled: true
-        },
+        account: { email: 'gregoriasatterfieldgr@outlook.com', label: 'g', plan: 'ultra', planLabel: 'Ultra', enabled: true },
         accounts: [
           {
-            id: 'acc_demo1', email: 'you@example.com', userTail: 'a1b2c3d4', type: 'ultra',
+            id: 'acc_demo1', email: 'gregoriasatterfieldgr@outlook.com', userTail: 'a1b2c3d4', type: 'ultra',
             isCurrent: true, used: 40000, limit: 40000, usageBased: false, hardLimit: null,
-            autoPercent: 66.7, otherPercent: 100, botPercent: 88.4, botHasLimit: true,
-            cycleEnd: new Date(Date.now() + 25 * 86400000).toISOString(),
-            botResetAt: new Date(Date.now() + 4 * 86400000).toISOString(),
+            autoPercent: 66.7, otherPercent: 100, botPercent: 89.4, botHasLimit: true,
+            cycleEnd: new Date(Date.now() + 24 * 86400000).toISOString(),
+            botResetAt: new Date(Date.now() + 3 * 86400000).toISOString(),
             sessionCount: 1,
-            addedAt: new Date(Date.now() - 3600 * 1000).toISOString(), tokenType: 'client', noRefresh: false, source: 'deeplogin'
+            addedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(), tokenType: 'client', noRefresh: false, source: 'deeplogin'
           },
           {
-            id: 'acc_demo2', email: 'alt@example.com', userTail: '9f8e7d6c', type: 'free',
+            id: 'acc_demo2', email: 'alt@example.com', userTail: '9f8e7d6c', type: 'pro',
+            isCurrent: false, used: 8000, limit: 20000, usageBased: true, hardLimit: null,
+            autoPercent: 41, otherPercent: 18, botPercent: 12.5, botHasLimit: true,
+            cycleEnd: new Date(Date.now() + 11 * 86400000).toISOString(),
+            botResetAt: new Date(Date.now() + 6 * 86400000).toISOString(),
+            sessionCount: 2,
+            addedAt: new Date(Date.now() - 86400 * 1000 * 2).toISOString(), tokenType: 'client', noRefresh: false, source: 'deeplogin'
+          },
+          {
+            id: 'acc_demo3', email: 'web-only@example.com', userTail: '11223344', type: 'free',
             isCurrent: false, used: 0, limit: 0, usageBased: false, hardLimit: null,
-            autoPercent: 11, otherPercent: 0, botPercent: null, botHasLimit: false,
+            autoPercent: 8, otherPercent: 0, botPercent: null, botHasLimit: false,
             sessionCount: 0,
             addedAt: new Date(Date.now() - 86400 * 1000 * 3).toISOString(), tokenType: 'web', noRefresh: true, source: 'cookie'
           }
