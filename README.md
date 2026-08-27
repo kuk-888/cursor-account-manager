@@ -1,0 +1,68 @@
+# Cursor 账号管理
+
+本机 Cursor 多账号工具：切换账号、管理登录态、查看额度、踢下线、提取 token，还能把客户端类型改成 `sand`，方便在 Cursor 里用 Grok Bot。
+
+侧栏名称：**账号管理**。命令面板搜「账号管理」或 `Cursor Account Manager`。
+
+本仓库版本从 **2.1.0** 起算。
+
+业务逻辑对齐 `keepchat-5.3.7-accounts(1).vsix`（文件名写 5.3.7，包内版本是 5.3.6）。这里只改了扩展名和中文包装：id 为 `local.cursor-account-manager`，侧栏「账号管理」，旧 `keepchat.*` 命令/配置仍可用。切号、额度、踢设备、浏览器授权、Sand 补丁与那份安装包一致。
+
+## 能做什么
+
+| 功能 | 说明 |
+|---|---|
+| **切换账号** | 把选中账号写入 Cursor 登录态。写完后必须完整退出再打开，只 Reload 窗口不够 |
+| **管理登录态** | 账号列表存在本扩展本地存储，覆盖安装不会丢号 |
+| **查看额度** | 联网读取 Auto / Other / Bot 用量，以及重置时间 |
+| **踢人** | 查看该账号已登录的设备，可把某台踢下线（最多大约 10 分钟生效） |
+| **提取本机 Token** | 「导入本机」读取当前 Cursor 已登录的 token，加入列表（不会自动切换） |
+| **浏览器授权提取 Token** | 打开隔离浏览器走官方登录，拿到可自动续期的令牌 |
+| **Token / Cookie 导入** | 粘贴 `userId::accessToken`，有第三段 refreshToken 的可以自动续期 |
+| **客户端类型改为 sand** | 先备份，再把安装目录里的 `x-cursor-client-type` 从 `ide` 改成 `sand` |
+| **在 Cursor 里用 Grok Bot** | 注入 Sand 之后请求走 Bot 额度，可用 Grok Bot 模型（同样需要完整重启） |
+
+## 切换账号注意
+
+1. 推荐用 **浏览器授权** 加号。这样有真的续期令牌，切过去不容易过期弹登录框。
+2. 网页 Cookie / 只有 web token 的账号可以进列表看额度，但切成全局登录后，Cursor 可能要求重新登录。建议先点「升级授权」。
+3. 写入前会备份 `state.vscdb`。切前若 client 账号的 accessToken 已过期，会先续期再写。
+4. 写入后校验邮箱和 userId。对不上会报错，不要只 Reload，要完整退出 Cursor 再开。
+5. 运行中的 Cursor 把登录态缓存在内存里，必须完整重启才会从库里重新读。
+
+## 本机安装
+
+```bash
+npm run package
+```
+
+命令面板 → `Extensions: Install from VSIX...` → 选打好的 `.vsix` → 重载窗口。
+
+侧栏会出现 **账号管理**。
+
+## 开发
+
+```bash
+npm run build
+npm run package
+```
+
+源码在 `src/`，构建后复制到 `dist/`。
+
+## 配置
+
+设置里搜「账号管理」或 `Cursor Account Manager`：
+
+- `cursorAccountManager.accountUsageEnabled` — 是否联网读额度
+- `cursorAccountManager.autoRefreshAccountTokens` — 后台自动续期
+- `cursorAccountManager.sandAppRoot` — 可选，指定 Cursor 安装目录
+- `cursorAccountManager.cursorOAuthClientId` — 一般不用改
+- `cursorAccountManager.manualCursorToken` — 手动覆盖本机登录态（切号成功后会清空）
+
+早期测试包用过的 `keepchat.*` 配置仍然兼容。
+
+## 说明
+
+- 扩展 id：`local.cursor-account-manager`
+- Sand 会改 Cursor 安装文件，先备份再写；要还原用「一键卸载」
+- Token 只存在你这台电脑的扩展存储和 Cursor 自己的登录库里，不会上传到网上

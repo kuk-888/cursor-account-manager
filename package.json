@@ -1,0 +1,147 @@
+{
+  "name": "cursor-account-manager",
+  "displayName": "Cursor 账号管理",
+  "description": "Cursor 多账号管理：切换账号、管理登录态、查看额度、踢设备、提取本机/浏览器 token，并把客户端类型改为 sand，方便在 Cursor 里用 Grok Bot。",
+  "version": "2.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kuk-888/cursor-account-manager.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "cursor",
+    "account",
+    "switch",
+    "token",
+    "quota",
+    "sand",
+    "grok"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:cursor-account-manager.sidePanel"
+  ],
+  "icon": "media/icon.png",
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cursor-account-manager",
+          "title": "账号管理",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "cursor-account-manager": [
+        {
+          "type": "webview",
+          "id": "cursor-account-manager.sidePanel",
+          "name": "账号管理"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "cursor-account-manager.openPanel",
+        "title": "打开账号管理",
+        "category": "账号管理"
+      },
+      {
+        "command": "cursor-account-manager.sandApply",
+        "title": "一键注入 Sand",
+        "category": "账号管理"
+      },
+      {
+        "command": "cursor-account-manager.sandRestore",
+        "title": "一键卸载 Sand",
+        "category": "账号管理"
+      },
+      {
+        "command": "keepchat.openPanel",
+        "title": "打开账号管理（旧命令）",
+        "category": "账号管理"
+      },
+      {
+        "command": "keepchat.sandApply",
+        "title": "一键注入 Sand（旧命令）",
+        "category": "账号管理"
+      },
+      {
+        "command": "keepchat.sandRestore",
+        "title": "一键卸载 Sand（旧命令）",
+        "category": "账号管理"
+      }
+    ],
+    "configuration": {
+      "title": "Cursor 账号管理",
+      "properties": {
+        "cursorAccountManager.accountUsageEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "顶部显示真实 Cursor 账号用量（联网 cursor.com）。关闭后不联网、不读凭证。"
+        },
+        "cursorAccountManager.manualCursorToken": {
+          "type": "string",
+          "default": "",
+          "description": "手动 Cursor 会话 token（格式 userId::accessToken）。留空则自动从本机 Cursor 登录态读取。"
+        },
+        "cursorAccountManager.cursorOAuthClientId": {
+          "type": "string",
+          "default": "KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB",
+          "description": "Cursor 浏览器登录/续期用的 OAuth client_id。一般无需修改。"
+        },
+        "cursorAccountManager.autoRefreshAccountTokens": {
+          "type": "boolean",
+          "default": true,
+          "description": "后台自动续期：对浏览器登录（client）账号定期检查并在临期时换取新 accessToken。"
+        },
+        "cursorAccountManager.sandAppRoot": {
+          "type": "string",
+          "default": "",
+          "description": "可选：Cursor Resources/app 目录。留空则用当前 Cursor 的 appRoot。"
+        },
+        "keepchat.accountUsageEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Legacy alias of cursorAccountManager.accountUsageEnabled."
+        },
+        "keepchat.manualCursorToken": {
+          "type": "string",
+          "default": "",
+          "description": "Legacy alias of cursorAccountManager.manualCursorToken."
+        },
+        "keepchat.cursorOAuthClientId": {
+          "type": "string",
+          "default": "KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB",
+          "description": "Legacy alias of cursorAccountManager.cursorOAuthClientId."
+        },
+        "keepchat.autoRefreshAccountTokens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Legacy alias of cursorAccountManager.autoRefreshAccountTokens."
+        },
+        "keepchat.sandAppRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Legacy alias of cursorAccountManager.sandAppRoot."
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.0.0"
+  },
+  "scripts": {
+    "build": "node scripts/build-extension.js",
+    "package": "node scripts/build-extension.js && vsce package --allow-missing-repository --no-dependencies"
+  }
+}

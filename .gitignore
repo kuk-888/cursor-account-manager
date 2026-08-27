@@ -1,0 +1,13 @@
+node_modules/
+*.vsix
+.DS_Store
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+keepchat-*.vsix
+.cursor/
+*.sync.star
+
