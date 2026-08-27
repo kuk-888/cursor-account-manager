@@ -5,6 +5,7 @@
   let toast = '';
   let toastTimer = null;
   let retryRestart = null;
+  let restarting = false;
   let lastRenderSig = '';
   let activeTab = 'accounts';
   let openMenuId = '';
@@ -25,8 +26,15 @@
       retryRestart = {
         message: String(data.message || '需要重启 Cursor 才能生效。'),
         action: String(data.action || 'accountSwitch'),
-        restartCommand: String(data.restartCommand || 'restartCursor')
+        restartCommand: 'restartCursor'
       };
+      toast = '';
+      if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+      render();
+    } else if (data && data.type === 'restartFailed') {
+      restarting = false;
+      if (retryRestart)
+        retryRestart.message = '自动重启没成功：' + String(data.error || '未知错误') + '。请自己完全退出 Cursor 再打开。';
       render();
     } else if (data && data.type === 'toast') {
       showToast(String(data.text || ''));
@@ -65,8 +73,7 @@
       acc.usageText || '', acc.error || '', acc.loading ? 1 : 0, acc.usagePct || 0,
       String(acc.usageBased), String(acc.enabled), accts, s.version || '',
       (s.sand && s.sand.patched) ? 1 : 0, (s.sand && s.sand.sand) || 0, (s.sand && s.sand.unpatched) || 0,
-      (s.sand && s.sand.error) || '', (s.sand && s.sand.auto) ? 1 : 0,
-      (s.sand && s.sand.commands && s.sand.commands.restore) || ''
+      (s.sand && s.sand.error) || '', (s.sand && s.sand.auto) ? 1 : 0
     ].join('¶');
   }
 
@@ -233,7 +240,6 @@
         + '<button class="btn danger" data-action="sandRestoreAsk">一键卸载</button>'
         + '<button class="btn" data-action="sandRefresh">刷新状态</button>'
       + '</div>'
-      + '<div class="sandBtns"><button class="btn sm" data-action="sandCmdsAsk">手动命令</button></div>'
       + '<div class="sandMeta">' + detail + '</div>'
       + '</div>';
   }
@@ -246,14 +252,6 @@
       + '</div>';
   }
 
-  function sandCmdBlock(which, title, hint, cmd) {
-    return '<div class="cmdBlock">'
-      + '<div class="cmdHead"><b>' + esc(title) + '</b>'
-      + '<button class="btn sm" data-action="sandCopy" data-which="' + attr(which) + '">复制</button></div>'
-      + '<p class="dialogHint">' + esc(hint) + '</p>'
-      + '<pre class="sandCmd">' + esc(cmd || '（还没有生成命令，先点一次刷新状态）') + '</pre>'
-      + '</div>';
-  }
   function dialogHtml() {
     if (!dialog) return '';
     if (dialog.type === 'confirmSandApply') {
@@ -263,21 +261,26 @@
     }
     if (dialog.type === 'confirmSandRestore') {
       return '<div class="modal" data-action="cancelDialog"><div class="dialog" data-stop="1"><h3>卸载 Sand</h3>'
-        + '<p class="restartMsg">会 <code>restore --force</code> 还原备份。卸完必须完整退出再打开。也可复制命令到终端手动跑。</p>'
+        + '<p class="restartMsg">会还原备份。卸完必须完整退出再打开，Reload 不够。</p>'
         + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">取消</button><button class="btn danger" data-action="sandRestoreConfirm">一键卸载</button></div></div></div>';
-    }
-    if (dialog.type === 'sandCmds') {
-      const cmds = (state && state.sand && state.sand.commands) || {};
-      return '<div class="modal" data-action="cancelDialog"><div class="dialog wide" data-stop="1"><h3>手动命令</h3>'
-        + '<p class="dialogHint">和面板一键按钮做的是同一件事。复制后打开「终端」粘贴回车，跑完必须完整退出 Cursor 再打开。</p>'
-        + sandCmdBlock('apply', '注入命令', '等价于「一键注入」。把 Cursor 请求头改成 sand，走 Bot 池。', cmds.apply)
-        + sandCmdBlock('restore', '卸载命令', '等价于「一键卸载」。带 --force。', cmds.restore)
-        + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">关闭</button></div></div></div>';
     }
     if (dialog.type === 'confirmSwitch') {
       return '<div class="modal" data-action="cancelDialog"><div class="dialog" data-stop="1"><h3>切换账号</h3>'
         + '<p class="restartMsg">确定切换 Cursor 全局登录账号到 ' + esc(dialog.email || dialog.id || '') + ' 吗？会自动备份并替换登录态，完成后需要完整重启 Cursor。当前已是该号也可以再切一次。</p>'
         + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">取消</button><button class="btn primary" data-action="confirmAccountSwitch">切换账号</button></div></div></div>';
+    }
+    if (dialog.type === 'confirmOverage') {
+      const closing = dialog.mode === 'disabled';
+      const who = dialog.email || dialog.id || '该账号';
+      const title = closing ? '关闭超额' : '开启超额';
+      const body = closing
+        ? '确定关闭 ' + esc(who) + ' 的超额吗？关闭后套餐额度用完就不能再超量使用。'
+        : '确定给 ' + esc(who) + ' 开启无限超额吗？套餐额度用完后会继续按用量计费，可能产生额外费用。';
+      const okCls = closing ? 'btn danger' : 'btn primary';
+      const okLabel = closing ? '关闭超额' : '开启无限超额';
+      return '<div class="modal" data-action="cancelDialog"><div class="dialog" data-stop="1"><h3>' + title + '</h3>'
+        + '<p class="restartMsg">' + body + '</p>'
+        + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">取消</button><button class="' + okCls + '" data-action="acctOverageConfirm">' + okLabel + '</button></div></div></div>';
     }
     if (dialog.type === 'acctImport') {
       return '<div class="modal" data-action="cancelDialog"><div class="dialog wide" data-stop="1"><h3>Token 导入账号</h3>'
@@ -313,11 +316,17 @@
 
   function retryRestartHtml() {
     if (!retryRestart) return '';
-    const restartTitle = (retryRestart.action === 'sandPatch') ? '需要完整重启' : '切换成功';
+    const restartTitle = restarting ? '正在重启' : ((retryRestart.action === 'sandPatch') ? '需要完整重启' : '切换成功');
+    const hint = restarting
+      ? '已在结束 Cursor 进程，结束后会自动再打开。不要点 Reload Window。'
+      : '点「立即重启」会退出整个 Cursor 再自动打开，不是 Reload Window。也可以自己完全退出后再开。';
     return '<div class="modal restartModal" data-stop="1"><div class="dialog restartDialog" data-stop="1"><h3>' + restartTitle + '</h3>'
-      + '<p class="restartMsg">' + esc(retryRestart.message || '需要重启 Cursor 才能生效。') + '</p>'
-      + '<p class="dialogHint">立即重启不会弹出终端。也可以自己 ⌘Q 再点 Dock 打开。Reload Window 不够。</p>'
-      + '<div class="dialogActions restartActions"><button class="btn" data-action="retryRestartLater">稍后自己退出</button><button class="btn primary" data-action="retryRestartNow">立即重启</button></div></div></div>';
+      + '<p class="restartMsg">' + esc(restarting ? '正在退出并重新打开 Cursor…' : (retryRestart.message || '需要重启 Cursor 才能生效。')) + '</p>'
+      + '<p class="dialogHint">' + hint + '</p>'
+      + '<div class="dialogActions restartActions">'
+        + (restarting ? '<button class="btn primary" disabled>正在重启…</button>'
+          : '<button class="btn" data-action="retryRestartLater">稍后自己退出</button><button class="btn primary" data-action="retryRestartNow">立即重启</button>')
+      + '</div></div></div>';
   }
 
   function render() {
@@ -369,7 +378,7 @@
       case 'acctDashboard':
         post('openDashboard', { id: el.getAttribute('data-id') });
         openMenuId = '';
-        showToast('正在打开 Cursor 控制台…');
+        showToast('正在打开隔离浏览器并注入该账号…');
         break;
       case 'refreshAccount': post('refreshAccount'); showToast('正在刷新当前用量...'); break;
       case 'openDashboard': post('openDashboard'); break;
@@ -433,34 +442,37 @@
       case 'sandRestoreAsk': dialog = { type: 'confirmSandRestore' }; render(); break;
       case 'sandRestoreConfirm': dialog = null; post('sandRestore'); showToast('正在卸载 Sand...'); render(); break;
       case 'sandRefresh': post('sandRefresh'); showToast('正在读取 Sand 状态...'); break;
-      case 'sandCmdsAsk': dialog = { type: 'sandCmds' }; render(); break;
-      case 'sandCopy': {
-        const which = el.getAttribute('data-which') || 'restore';
-        const text = (state && state.sand && state.sand.commands && state.sand.commands[which]) || '';
-        if (text) copyText(text);
-        showToast(which === 'apply' ? '已复制注入命令' : '已复制卸载命令');
-        post('sandCopyCommand', { which });
+      case 'acctOverageToggle': {
+        const id = el.getAttribute('data-id') || '';
+        const mode = el.getAttribute('data-mode') || 'unlimited';
+        const acc = (state.accounts || []).find((x) => x.id === id) || {};
+        dialog = { type: 'confirmOverage', id, mode, email: acc.email || '' };
+        render();
       } break;
-      case 'acctOverageToggle': post('accountSetHardLimit', { id: el.getAttribute('data-id'), mode: el.getAttribute('data-mode') || 'unlimited' }); showToast(el.getAttribute('data-mode') === 'disabled' ? '正在关闭超额...' : '正在开启无限超额...'); break;
+      case 'acctOverageConfirm':
+        if (dialog && dialog.type === 'confirmOverage') {
+          const closing = dialog.mode === 'disabled';
+          post('accountSetHardLimit', { id: dialog.id, mode: dialog.mode || 'unlimited', confirmed: true });
+          dialog = null;
+          showToast(closing ? '正在关闭超额...' : '正在开启无限超额...');
+          render();
+        }
+        break;
       case 'cancelDialog': dialog = null; render(); break;
-      case 'retryRestartLater': retryRestart = null; render(); break;
-      case 'retryRestartNow': { const cmd = retryRestart && retryRestart.restartCommand === 'restartCursor' ? 'restartCursor' : 'reloadWindow'; retryRestart = null; post(cmd); } break;
+      case 'retryRestartLater': retryRestart = null; restarting = false; render(); break;
+      case 'retryRestartNow':
+        if (restarting) break;
+        restarting = true;
+        if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+        toast = '';
+        post('restartCursor');
+        render();
+        break;
     }
   }
 
-  function copyText(text) {
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = String(text || '');
-      ta.setAttribute('readonly', '');
-      ta.style.cssText = 'position:fixed;left:-9999px;top:0';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-    } catch { }
-  }
   function showToast(text) {
+    if (retryRestart || restarting) return;
     toast = text;
     render();
     if (toastTimer) clearTimeout(toastTimer);

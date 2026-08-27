@@ -119,11 +119,6 @@ button,input,textarea,select{font:inherit;color:inherit}
 .restartActions{display:flex;gap:10px}
 .restartActions .btn{flex:1;justify-content:center}
 
-.cmdBlock{margin:0 0 12px;padding:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface)}
-.cmdHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
-.cmdHead b{font-size:13px;color:#ffe9a6}
-.sandCmd{margin:6px 0 0;padding:8px 10px;border-radius:6px;background:#0a0e14;color:#9ab0cc;font-size:10px;line-height:1.5;white-space:pre-wrap;word-break:break-all;max-height:72px;overflow:auto;border:1px solid #1a2233}
-
 .sessRow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
 .sessRow b{display:block;font-size:12px}
 .sessRow span{font-size:11px;color:var(--muted)}
