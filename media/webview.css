@@ -32,6 +32,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 .btn[disabled]{opacity:.35;cursor:not-allowed}
 
 .acctAddRow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px}
+.acctBackupRow{grid-template-columns:1fr 1fr}
 .acctAddBtn{width:100%}
 .acctAddHint{font-size:11px;color:var(--muted);margin:0 0 12px;line-height:1.45}
 .acctAddHint code{background:var(--surface);padding:1px 4px;border-radius:4px;font-size:10px}
@@ -61,7 +62,10 @@ button,input,textarea,select{font:inherit;color:inherit}
 .acctCard.cur{border-color:#d4a225;background:#1a160c;box-shadow:inset 3px 0 0 var(--accent)}
 .acctTop{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .acctId{min-width:0;flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
-.acctId b{font-size:12px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acctId b,.acctEmail{font-size:12px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acctEmail{margin:0;padding:0;border:0;background:transparent;color:inherit;font-weight:700;text-align:left;cursor:pointer;border-radius:4px}
+.acctEmail:hover{color:var(--accent)}
+.botRow .acctEmail{font-weight:700}
 .acctTools{display:flex;align-items:center;gap:4px;flex:none}
 .toolBtn{height:24px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;font-weight:700;cursor:pointer}
 .toolBtn:hover{border-color:#3d4d63;background:var(--elevated)}
@@ -103,7 +107,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 .botList{display:flex;flex-direction:column;gap:8px}
 .botRow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
 .botRow.cur{border-color:#d4a225;background:#1a160c}
-.botRow b{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.botRow b,.botRow .acctEmail{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .modal{position:absolute;inset:0;background:rgba(0,0,0,.55);display:grid;place-items:center;padding:16px;z-index:25}
 .modal.restartModal{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:60}
@@ -124,6 +128,14 @@ button,input,textarea,select{font:inherit;color:inherit}
 .sessRow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
 .sessRow b{display:block;font-size:12px}
 .sessRow span{font-size:11px;color:var(--muted)}
+.prevList{max-height:280px;overflow:auto;margin:8px 0 4px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface)}
+.prevRow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.prevRow:last-child{border-bottom:0}
+.prevRow b{display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+.prevRow span{font-size:11px;color:var(--muted)}
+.prevAct{flex:none;font-size:10px;font-weight:800;border-radius:999px;padding:2px 7px}
+.prevAct.add{background:#1d3a2c;color:#8eecc0}
+.prevAct.upd{background:#3a3220;color:#f0d48a}
 .kickWarn{margin-top:12px;padding:12px;border:1px solid #5a2a35;border-radius:var(--radius-sm);background:#1a1015}
 .kickWarn p{margin:0 0 10px;color:#ffd5d5;font-size:12px;line-height:1.5}
 
