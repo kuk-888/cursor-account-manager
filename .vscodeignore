@@ -1,6 +1,7 @@
 scripts/**
 src/**
 preview.html
+docs/**
 **/*.map
 .DS_Store
 node_modules/**

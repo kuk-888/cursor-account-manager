@@ -66,7 +66,7 @@
       x.id, x.isCurrent ? 1 : 0, x.email || '', x.type || '', x.partial ? 1 : 0,
       x.noRefresh ? 1 : 0, x.userTail || '', x.used == null ? '' : x.used,
       x.limit == null ? '' : x.limit, String(x.usageBased), x.usageError || '',
-      x.autoPercent, x.otherPercent, x.botPercent, x.sessionCount, x.cycleEnd || '', x.botResetAt || ''
+      x.autoPercent, x.otherPercent, x.botPercent, x.sessionCount, x.cycleEnd || '', x.botResetAt || '', x.note || ''
     ].join('|')).join(';');
     return [
       acc.email || '', acc.plan || '', acc.planLabel || '', acc.usageShort || '',
@@ -140,6 +140,11 @@
     else if (p.includes('business') || p.includes('team') || p.includes('enterprise')) { label = 'Business'; cls = 'biz'; }
     return '<span class="tag plan ' + cls + '">' + esc(label) + '</span>';
   }
+  function acctNoteBadge(x) {
+    const note = String((x && x.note) || '').trim();
+    if (!note) return '';
+    return '<span class="tag note" title="' + attr(note) + '">' + esc(note) + '</span>';
+  }
   function acctOverageToggle(x) {
     if (isFreePlan(x)) return '';
     const on = x.usageBased === true;
@@ -155,6 +160,7 @@
       + '<button class="toolBtn moreBtn" data-action="acctMore" data-id="' + attr(x.id) + '" title="更多">更多</button>'
       + (open ? '<div class="moreMenu" data-stop="1">'
         + '<button data-action="' + renewAction + '" data-id="' + attr(x.id) + '">' + esc(renewLabel) + '</button>'
+        + '<button data-action="acctNote" data-id="' + attr(x.id) + '">' + (String(x.note || '').trim() ? '改备注' : '备注') + '</button>'
         + '<button data-action="acctDashboard" data-id="' + attr(x.id) + '">进控制台</button>'
         + '<button data-action="acctSessions" data-id="' + attr(x.id) + '">查看设备</button>'
         + '<button data-action="acctSwitch" data-id="' + attr(x.id) + '">切换账号</button>'
@@ -172,6 +178,7 @@
         + '<div class="acctTop">'
           + '<div class="acctId"><b title="' + attr(x.email || '') + '">' + esc(x.email || '(未知邮箱)') + '</b>'
             + acctPlanBadge(x)
+            + acctNoteBadge(x)
             + (x.isCurrent ? '<span class="usingPill">使用中</span>' : '')
           + '</div>'
           + '<div class="acctTools">'
@@ -282,6 +289,16 @@
         + '<p class="restartMsg">' + body + '</p>'
         + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">取消</button><button class="' + okCls + '" data-action="acctOverageConfirm">' + okLabel + '</button></div></div></div>';
     }
+    if (dialog.type === 'acctNote') {
+      return '<div class="modal" data-action="cancelDialog"><div class="dialog" data-stop="1"><h3>账号备注</h3>'
+        + '<p class="dialogHint">给 ' + esc(dialog.email || '该账号') + ' 加个短标签，会显示在邮箱旁边。最多 24 字，留空等于清除。</p>'
+        + '<input id="acctNoteText" class="dialogInput" maxlength="24" placeholder="例如：主力、备用、公司号" value="' + attr(dialog.draft || '') + '">'
+        + '<div class="dialogActions">'
+          + '<button class="btn" data-action="cancelDialog">取消</button>'
+          + (String(dialog.draft || '').trim() ? '<button class="btn danger" data-action="acctNoteClear">清除</button>' : '')
+          + '<button class="btn primary" data-action="acctNoteConfirm">保存备注</button>'
+        + '</div></div></div>';
+    }
     if (dialog.type === 'acctImport') {
       return '<div class="modal" data-action="cancelDialog"><div class="dialog wide" data-stop="1"><h3>Token 导入账号</h3>'
         + '<p class="dialogHint">粘贴 <code>userId::accessToken</code> 或 <code>WorkosCursorSessionToken=...</code>。带第三段 <code>refreshToken</code> 的可自动续期。</p>'
@@ -341,24 +358,34 @@
     bind();
   }
 
+  let bound = false;
+  let ignoreMenuClose = false;
   function bind() {
     const acctImportText = document.getElementById('acctImportText');
     if (acctImportText) acctImportText.addEventListener('input', (e) => {
       if (dialog && dialog.type === 'acctImport') dialog.draft = String(e.target.value || '');
     });
-    document.querySelectorAll('[data-action]').forEach((el) => el.addEventListener('click', (e) => {
+    const acctNoteText = document.getElementById('acctNoteText');
+    if (acctNoteText) acctNoteText.addEventListener('input', (e) => {
+      if (dialog && dialog.type === 'acctNote') dialog.draft = String(e.target.value || '');
+    });
+    if (bound) return;
+    bound = true;
+    app.addEventListener('click', (e) => {
+      const el = e.target.closest && e.target.closest('[data-action]');
+      if (!el || !app.contains(el)) return;
       const action = el.getAttribute('data-action');
       const stop = e.target.closest && e.target.closest('[data-stop]');
       if ((action === 'cancelDialog') && stop && e.target !== el) return;
       e.stopPropagation();
       handleAction(action, el);
-    }));
-    document.addEventListener('click', onDocClick, { once: true });
+    });
+    document.addEventListener('click', onDocClick);
   }
 
   function onDocClick(e) {
-    if (!openMenuId) return;
-    if (e.target.closest && e.target.closest('.moreWrap')) return;
+    if (ignoreMenuClose || !openMenuId) return;
+    if (e.target.closest && (e.target.closest('.moreWrap') || e.target.closest('.modal'))) return;
     openMenuId = '';
     render();
   }
@@ -373,7 +400,9 @@
       case 'acctMore': {
         const id = el.getAttribute('data-id') || '';
         openMenuId = openMenuId === id ? '' : id;
+        ignoreMenuClose = true;
         render();
+        setTimeout(() => { ignoreMenuClose = false; }, 0);
       } break;
       case 'acctDashboard':
         post('openDashboard', { id: el.getAttribute('data-id') });
@@ -410,6 +439,31 @@
         }
         dialog = null;
         render();
+        break;
+      case 'acctNote': {
+        const id = el.getAttribute('data-id') || '';
+        const acc = (state.accounts || []).find((x) => x.id === id) || {};
+        openMenuId = '';
+        dialog = { type: 'acctNote', id, email: acc.email || '', draft: String(acc.note || '') };
+        render();
+      } break;
+      case 'acctNoteConfirm':
+        if (dialog && dialog.type === 'acctNote') {
+          const t = document.getElementById('acctNoteText');
+          const latest = t ? String(t.value || '') : String(dialog.draft || '');
+          post('accountSetNote', { id: dialog.id, note: latest });
+          dialog = null;
+          showToast('备注已保存');
+          render();
+        }
+        break;
+      case 'acctNoteClear':
+        if (dialog && dialog.type === 'acctNote') {
+          post('accountSetNote', { id: dialog.id, note: '' });
+          dialog = null;
+          showToast('已清除备注');
+          render();
+        }
         break;
       case 'acctRemove': openMenuId = ''; post('accountRemove', { id: el.getAttribute('data-id') }); showToast('已移除账号'); break;
       case 'acctRefreshOne': post('accountRefreshOne', { id: el.getAttribute('data-id') }); showToast('正在联网刷新该账号...'); break;
