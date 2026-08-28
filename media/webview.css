@@ -77,6 +77,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 .tag.plan.free{background:#2a3344;color:#a0aec0}
 .tag.plan.ultra{background:#b88df7;color:#160826}
 .tag.plan.biz{background:#6baaff;color:#06182f}
+.tag.note{max-width:9.5em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#2a3348;color:#c8d6ee;border:1px solid #3d4d66}
 .usingPill{font-size:10px;font-weight:700;color:#1a1200;background:linear-gradient(135deg,#ffce4d,#f0b830);border-radius:999px;padding:1px 7px}
 
 .quotaRow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
@@ -109,6 +110,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 .dialog{width:min(420px,100%);border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);padding:16px;box-shadow:0 16px 48px rgba(0,0,0,.4)}
 .dialog.wide{max-width:540px;width:90%}
 .dialog.wide textarea{width:100%;min-height:120px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px;font:inherit;resize:vertical}
+.dialogInput{width:100%;height:36px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:var(--radius-sm);padding:0 10px}
 .dialog h3{margin:0 0 10px;font-size:15px}
 .dialogActions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .dialogHint{font-size:12px;color:#8a9bb0;margin:0 0 8px;line-height:1.5}

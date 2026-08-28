@@ -15,57 +15,61 @@
   </style>
 </head>
 <body>
-  <div class="previewBar">这是<strong>界面预览</strong>，按钮不会真切号。侧栏宽度按插件面板模拟。真功能请装 VSIX。</div>
+  <div class="previewBar">这是<strong>界面预览</strong>。备注可以改，其它按钮不会真切号。侧栏宽度按插件面板模拟。</div>
   <div class="stage"><div class="phone"><div id="app"></div></div></div>
   <script>
+    const previewState = {
+        version: '2.2.5-preview',
+      sand: { patched: false, version: '3.4.20', sand: 0, unpatched: 5, error: '' },
+      account: { email: 'main@example.com', label: 'g', plan: 'ultra', planLabel: 'Ultra', enabled: true },
+      accounts: [
+        {
+          id: 'acc_demo1', email: 'main@example.com', userTail: 'a1b2c3d4', type: 'ultra',
+          isCurrent: true, used: 40000, limit: 40000, usageBased: false, hardLimit: null,
+          autoPercent: 66.7, otherPercent: 100, botPercent: 89.4, botHasLimit: true,
+          cycleEnd: new Date(Date.now() + 24 * 86400000).toISOString(),
+          botResetAt: new Date(Date.now() + 3 * 86400000).toISOString(),
+          sessionCount: 1, note: '主力',
+          addedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(), tokenType: 'client', noRefresh: false, source: 'deeplogin'
+        },
+        {
+          id: 'acc_demo2', email: 'alt@example.com', userTail: '9f8e7d6c', type: 'pro',
+          isCurrent: false, used: 8000, limit: 20000, usageBased: true, hardLimit: null,
+          autoPercent: 41, otherPercent: 18, botPercent: 12.5, botHasLimit: true,
+          cycleEnd: new Date(Date.now() + 11 * 86400000).toISOString(),
+          botResetAt: new Date(Date.now() + 6 * 86400000).toISOString(),
+          sessionCount: 2, note: '备用 Pro',
+          addedAt: new Date(Date.now() - 86400 * 1000 * 2).toISOString(), tokenType: 'client', noRefresh: false, source: 'deeplogin'
+        },
+        {
+          id: 'acc_demo3', email: 'web-only@example.com', userTail: '11223344', type: 'free',
+          isCurrent: false, used: 0, limit: 0, usageBased: false, hardLimit: null,
+          autoPercent: 8, otherPercent: 0, botPercent: null, botHasLimit: false,
+          sessionCount: 0, note: '',
+          addedAt: new Date(Date.now() - 86400 * 1000 * 3).toISOString(), tokenType: 'web', noRefresh: true, source: 'cookie'
+        }
+      ]
+    };
+    function pushPreviewState() {
+      window.postMessage({ type: 'state', state: previewState }, '*');
+    }
     window.acquireVsCodeApi = function () {
       return {
         postMessage: function (msg) {
           const t = document.querySelector('.previewBar');
+          if (msg && msg.type === 'accountSetNote') {
+            const acc = previewState.accounts.find((x) => x.id === msg.id);
+            if (acc) acc.note = String(msg.note || '').replace(/\s+/g, ' ').trim().slice(0, 24);
+            if (t) t.innerHTML = '预览：已保存备注 <b>' + (acc && acc.note ? acc.note : '（已清除）') + '</b>';
+            pushPreviewState();
+            return;
+          }
           if (t) t.innerHTML = '预览模式已拦截：<b>' + (msg && msg.type || '') + '</b>（不会写 Cursor 登录态）';
         }
       };
     };
   </script>
   <script src="media/webview.js"></script>
-  <script>
-    window.postMessage({
-      type: 'state',
-      state: {
-        version: '2.2.4-preview',
-        sand: {
-          patched: false, version: '3.4.20', sand: 0, unpatched: 5, error: ''
-        },
-        account: { email: 'gregoriasatterfieldgr@outlook.com', label: 'g', plan: 'ultra', planLabel: 'Ultra', enabled: true },
-        accounts: [
-          {
-            id: 'acc_demo1', email: 'gregoriasatterfieldgr@outlook.com', userTail: 'a1b2c3d4', type: 'ultra',
-            isCurrent: true, used: 40000, limit: 40000, usageBased: false, hardLimit: null,
-            autoPercent: 66.7, otherPercent: 100, botPercent: 89.4, botHasLimit: true,
-            cycleEnd: new Date(Date.now() + 24 * 86400000).toISOString(),
-            botResetAt: new Date(Date.now() + 3 * 86400000).toISOString(),
-            sessionCount: 1,
-            addedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(), tokenType: 'client', noRefresh: false, source: 'deeplogin'
-          },
-          {
-            id: 'acc_demo2', email: 'alt@example.com', userTail: '9f8e7d6c', type: 'pro',
-            isCurrent: false, used: 8000, limit: 20000, usageBased: true, hardLimit: null,
-            autoPercent: 41, otherPercent: 18, botPercent: 12.5, botHasLimit: true,
-            cycleEnd: new Date(Date.now() + 11 * 86400000).toISOString(),
-            botResetAt: new Date(Date.now() + 6 * 86400000).toISOString(),
-            sessionCount: 2,
-            addedAt: new Date(Date.now() - 86400 * 1000 * 2).toISOString(), tokenType: 'client', noRefresh: false, source: 'deeplogin'
-          },
-          {
-            id: 'acc_demo3', email: 'web-only@example.com', userTail: '11223344', type: 'free',
-            isCurrent: false, used: 0, limit: 0, usageBased: false, hardLimit: null,
-            autoPercent: 8, otherPercent: 0, botPercent: null, botHasLimit: false,
-            sessionCount: 0,
-            addedAt: new Date(Date.now() - 86400 * 1000 * 3).toISOString(), tokenType: 'web', noRefresh: true, source: 'cookie'
-          }
-        ]
-      }
-    }, '*');
-  </script>
+  <script>pushPreviewState();</script>
 </body>
 </html>

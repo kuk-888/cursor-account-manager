@@ -498,6 +498,12 @@ class AccountProvider {
                 await removeAccount(String(msg.id || ''));
                 this.postState();
             }
+            if (msg.type === 'accountSetNote') {
+                const r = await setAccountNote(String(msg.id || ''), msg.note);
+                if (!r.ok)
+                    vscode.window.showErrorMessage('账号管理：保存备注失败 - ' + (r.error || ''));
+                this.postState();
+            }
             if (msg.type === 'accountRefreshOne') {
                 const r = await refreshAccountInfo(String(msg.id || ''));
                 if (!r.ok)
@@ -1920,7 +1926,7 @@ async function upsertAccount(acc) {
     if (idx >= 0) {
         const prev = list[idx];
         acc.id = prev.id;
-        list[idx] = { ...prev, ...acc, id: prev.id, addedAt: prev.addedAt || acc.addedAt };
+        list[idx] = { ...prev, ...acc, id: prev.id, addedAt: prev.addedAt || acc.addedAt, note: normalizeNote(acc.note != null ? acc.note : prev.note) };
         await saveAccounts(list);
         return { acc: list[idx], duplicate: true };
     }
@@ -2269,6 +2275,18 @@ async function setHardLimitForAccount(id, mode, limitDollars) {
     return { ok: true };
 }
 async function removeAccount(id) { await saveAccounts(getAccounts().filter(a => a.id !== id)); }
+function normalizeNote(v) {
+    return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, 24);
+}
+async function setAccountNote(id, note) {
+    const list = getAccounts();
+    const acc = list.find(a => a.id === id);
+    if (!acc)
+        return { ok: false, error: '账号不存在' };
+    acc.note = normalizeNote(note);
+    await saveAccounts(list);
+    return { ok: true, note: acc.note };
+}
 function accountsForClient() {
     const currentId = resolveCurrentAccountId();
     return getAccounts().map(a => {
@@ -2295,7 +2313,8 @@ function accountsForClient() {
             botHasLimit: !!(u && u.botHasLimit),
             botResetAt: (u && u.botResetAt) || '',
             cycleEnd: (u && u.cycleEnd) || '',
-            sessionCount: u && typeof u.sessionCount === 'number' ? u.sessionCount : null
+            sessionCount: u && typeof u.sessionCount === 'number' ? u.sessionCount : null,
+            note: normalizeNote(a.note)
         };
     });
 }
