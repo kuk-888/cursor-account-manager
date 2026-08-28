@@ -382,13 +382,11 @@ class AccountProvider {
                             this.postState();
                             return;
                         }
-                        if (cookieValue) {
-                            const loginUserId = normUserId(String((decodeJwtPayload(r.accessToken) || {}).sub || '').replace(/^auth0\|/, ''));
-                            if (injUserId && loginUserId && loginUserId !== injUserId) {
-                                vscode.window.showErrorMessage('账号管理：授权拿到的是另一个账号（…' + loginUserId.slice(-8) + '），未添加。请确认粘贴的 token 有效后重试。');
-                                this.postState();
-                                return;
-                            }
+                        if (cookieValue && !isSameCursorAccount({ userId: injUserId, accessToken: probe.accessToken }, { userId: r.authId, accessToken: r.accessToken, authId: r.authId })) {
+                            const loginUserId = normUserId(String((decodeJwtPayload(r.accessToken) || {}).sub || r.authId || '').replace(/^auth0\|/, ''));
+                            vscode.window.showErrorMessage('账号管理：授权拿到的邮箱/账号和粘贴的 token 不是同一个（…' + loginUserId.slice(-8) + '），未添加。');
+                            this.postState();
+                            return;
                         }
                         const add = await addAccountFromDeepLogin(r.accessToken, r.refreshToken, r.authId || '');
                         if (add.ok)
@@ -465,8 +463,8 @@ class AccountProvider {
                 }
                 const payload = decodeJwtPayload(r.accessToken) || {};
                 const loginUserId = normUserId(String(payload.sub || '').replace(/^auth0\|/, ''));
-                if (targetUserId && loginUserId && loginUserId !== targetUserId) {
-                    vscode.window.showErrorMessage('账号管理：授权拿到的是另一个账号（…' + loginUserId.slice(-8) + '），未升级。请确认该账号 cookie 仍有效后重试。');
+                if (!isSameCursorAccount({ userId: targetUserId, accessToken: unquote((acc.authBlob || {})['cursorAuth/accessToken'] || ''), email: acc.email }, { userId: loginUserId, accessToken: r.accessToken, authId: r.authId })) {
+                    vscode.window.showErrorMessage('账号管理：授权拿到的邮箱/账号和该条记录不是同一个（…' + loginUserId.slice(-8) + '），未升级。');
                     this.postState();
                     return;
                 }
@@ -1799,6 +1797,64 @@ function unquote(v) { const s = String(v == null ? '' : v); if (s.length >= 2 &&
 } return s; }
 function normEmail(v) { return unquote(v).toLowerCase().trim(); }
 function normUserId(v) { return unquote(v).trim(); }
+function jwtEmailClaim(payload) {
+    if (!payload || typeof payload !== 'object')
+        return '';
+    const v = payload.email || payload.email_address || '';
+    const e = normEmail(v);
+    return e && !e.endsWith('@cursor.local') ? e : '';
+}
+function collectCursorUserIds(userId, accessToken, authId) {
+    const ids = new Set();
+    const add = (v) => {
+        const s = normUserId(String(v || '').replace(/^auth0\|/i, ''));
+        if (!s)
+            return;
+        ids.add(s);
+        const m = s.match(/user_[A-Za-z0-9]+/);
+        if (m)
+            ids.add(m[0]);
+    };
+    add(userId);
+    add(authId);
+    const p = decodeJwtPayload(accessToken) || {};
+    add(p.sub);
+    add(p.id);
+    add(p.userId);
+    add(p.authId);
+    add(p.user_id);
+    return ids;
+}
+function cursorIdsOverlap(a, b) {
+    for (const x of a)
+        if (x && b.has(x))
+            return true;
+    return false;
+}
+function realEmailOf(accessToken, fallback) {
+    const p = decodeJwtPayload(accessToken) || {};
+    const fromClaim = jwtEmailClaim(p);
+    if (fromClaim)
+        return fromClaim;
+    const sub = String(p.sub || '');
+    if (sub.includes('@'))
+        return normEmail(sub.split('|').find(x => x.includes('@')) || sub);
+    const fb = normEmail(fallback);
+    return fb && !fb.endsWith('@cursor.local') ? fb : '';
+}
+// 网页 JWT.sub 和桌面授权回来的 WorkOS user_xxx 经常不是同一串，但还是同一个人。
+// 只在两边都有真实邮箱且邮箱不同时才当成换号；id 对不上但邮箱未知则放行。
+function isSameCursorAccount(expected, got) {
+    const aIds = collectCursorUserIds(expected && expected.userId, expected && expected.accessToken, expected && expected.authId);
+    const bIds = collectCursorUserIds(got && got.userId, got && got.accessToken, got && got.authId);
+    if (cursorIdsOverlap(aIds, bIds))
+        return true;
+    const aEmail = realEmailOf(expected && expected.accessToken, expected && expected.email);
+    const bEmail = realEmailOf(got && got.accessToken, got && got.email);
+    if (aEmail && bEmail)
+        return aEmail === bEmail;
+    return true;
+}
 function decodeJwtPayload(token) {
     try {
         const part = String(token || '').split('.')[1];
