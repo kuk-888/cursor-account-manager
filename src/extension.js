@@ -56,6 +56,7 @@ let currentCursorEmailCache = '';
 let sqliteModuleCache;
 let sandStatusBar;
 let restartScheduled = false;
+let pendingImportAccounts = [];
 
 const VIEW_ID = 'cursor-account-manager.sidePanel';
 const CONTAINER_ID = 'cursor-account-manager';
@@ -495,6 +496,70 @@ class AccountProvider {
             if (msg.type === 'accountRemove') {
                 await removeAccount(String(msg.id || ''));
                 this.postState();
+            }
+            if (msg.type === 'copyText') {
+                const text = String(msg.text || '');
+                if (text)
+                    await vscode.env.clipboard.writeText(text);
+            }
+            if (msg.type === 'accountCopyEmail') {
+                const acc = getAccounts().find(a => a.id === String(msg.id || ''));
+                const email = String((acc && acc.email) || '').trim();
+                if (!email || email === '(未知邮箱)')
+                    vscode.window.showWarningMessage('账号管理：该账号没有邮箱可复制');
+                else
+                    await vscode.env.clipboard.writeText(email);
+            }
+            if (msg.type === 'accountCopyToken') {
+                const acc = getAccounts().find(a => a.id === String(msg.id || ''));
+                const token = exportAccountSession(acc);
+                if (!token)
+                    vscode.window.showWarningMessage('账号管理：该账号没有可复制的 token');
+                else
+                    await vscode.env.clipboard.writeText(token);
+            }
+            if (msg.type === 'accountExportAll') {
+                const r = await exportAllAccounts();
+                if (r.cancelled)
+                    return;
+                if (!r.ok)
+                    vscode.window.showErrorMessage('账号管理：导出失败 - ' + (r.error || ''));
+                else {
+                    vscode.window.showInformationMessage('账号管理：已导出 ' + r.count + ' 个账号');
+                    this.post({ type: 'toast', text: '已导出 ' + r.count + ' 个账号' });
+                }
+            }
+            if (msg.type === 'accountImportAll') {
+                const r = await pickAccountBackup();
+                if (r.cancelled)
+                    return;
+                if (!r.ok) {
+                    vscode.window.showErrorMessage('账号管理：导入失败 - ' + (r.error || ''));
+                    return;
+                }
+                this.post({
+                    type: 'importPreview',
+                    fileName: r.fileName || '',
+                    added: r.added,
+                    updated: r.updated,
+                    rows: r.rows || []
+                });
+            }
+            if (msg.type === 'accountImportCancel') {
+                pendingImportAccounts = [];
+            }
+            if (msg.type === 'accountImportConfirm') {
+                const r = await commitPendingImport();
+                if (r.cancelled)
+                    return;
+                if (!r.ok)
+                    vscode.window.showErrorMessage('账号管理：导入失败 - ' + (r.error || ''));
+                else {
+                    vscode.window.showInformationMessage('账号管理：导入完成，新增 ' + r.added + '，更新 ' + r.updated);
+                    this.post({ type: 'toast', text: '导入完成：新增 ' + r.added + '，更新 ' + r.updated });
+                }
+                this.postState();
+                fetchCursorUsage();
             }
             if (msg.type === 'accountSetNote') {
                 const r = await setAccountNote(String(msg.id || ''), msg.note);
@@ -1574,6 +1639,205 @@ async function deepLoginViaInjectedBrowser(cookieValue) {
         }
         catch { }
     }
+}
+function exportAccountRecord(acc) {
+    if (!acc)
+        return null;
+    const blob = acc.authBlob || {};
+    const accessToken = unquote(blob['cursorAuth/accessToken'] || '');
+    const userId = normUserId(acc.userId || blob['cursorAuth/userId'] || '');
+    const rawRefresh = unquote(acc.refreshToken || blob['cursorAuth/refreshToken'] || '');
+    const refreshToken = (rawRefresh && rawRefresh !== accessToken) ? rawRefresh : '';
+    if (!accessToken)
+        return null;
+    return {
+        email: acc.email || '',
+        userId,
+        note: normalizeNote(acc.note),
+        type: acc.type || '',
+        tokenType: acc.tokenType || (refreshToken ? 'client' : 'web'),
+        source: acc.source || '',
+        addedAt: acc.addedAt || '',
+        accessToken,
+        refreshToken,
+        accessTokenExp: typeof acc.accessTokenExp === 'number' ? acc.accessTokenExp : 0,
+        noRefresh: !refreshToken,
+        partial: !!(!refreshToken || acc.partial)
+    };
+}
+function parseAccountBackup(raw) {
+    let data;
+    try {
+        data = JSON.parse(String(raw || ''));
+    }
+    catch {
+        return { ok: false, error: '不是合法 JSON' };
+    }
+    let items = [];
+    if (Array.isArray(data))
+        items = data;
+    else if (data && Array.isArray(data.accounts))
+        items = data.accounts;
+    else if (data && (data.accessToken || data.token || data.session || data.email))
+        items = [data];
+    else
+        return { ok: false, error: 'JSON 里没有 accounts 数组' };
+    return { ok: true, items };
+}
+function accountFromBackupItem(item) {
+    if (!item || typeof item !== 'object')
+        return null;
+    let accessToken = unquote(item.accessToken || '');
+    let userId = normUserId(item.userId || '');
+    let refreshToken = unquote(item.refreshToken || '');
+    const packed = String(item.token || item.session || item.raw || '').trim();
+    if ((!accessToken || !userId) && packed) {
+        const parsed = parseCursorSessionInput(packed);
+        userId = userId || parsed.userId;
+        accessToken = accessToken || parsed.accessToken;
+        if (!refreshToken && parsed.refreshToken && parsed.refreshToken !== parsed.accessToken)
+            refreshToken = parsed.refreshToken;
+    }
+    if (!accessToken)
+        return null;
+    const email = normEmail(item.email || '');
+    const realRefresh = refreshToken && refreshToken !== accessToken ? refreshToken : '';
+    const sess = userId ? (userId + '%3A%3A' + accessToken) : accessToken;
+    const blob = {
+        'cursorAuth/accessToken': accessToken,
+        'cursorAuth/userId': userId,
+        'cursorAuth/cachedUserId': userId,
+        'cursorAuth/authId': userId,
+        'cursorAuth/workosCursorSessionToken': sess,
+        'cursorAuth/cachedWorkosSessionToken': sess,
+        'cursorAuth/isLoggedIn': 'true',
+        'cursorAuth/isAuthenticated': 'true',
+        'cursorAuth/isAuthorized': 'true'
+    };
+    if (realRefresh)
+        blob['cursorAuth/refreshToken'] = realRefresh;
+    if (email) {
+        blob['cursorAuth/cachedEmail'] = email;
+        blob['cursorAuth/email'] = email;
+        blob['cursorAuth/user'] = JSON.stringify({ email, id: userId, sub: userId });
+    }
+    if (item.type)
+        blob['cursorAuth/stripeMembershipType'] = String(item.type);
+    const acc = makeAccountFromBlob(blob, { email, userId });
+    acc.note = normalizeNote(item.note);
+    acc.tokenType = item.tokenType || (realRefresh ? 'client' : 'web');
+    acc.noRefresh = !realRefresh || item.noRefresh === true;
+    acc.partial = !realRefresh || item.partial === true;
+    acc.refreshToken = realRefresh;
+    acc.source = item.source || 'import';
+    acc.type = item.type || acc.type || '';
+    acc.accessTokenExp = typeof item.accessTokenExp === 'number' ? item.accessTokenExp : tokenMetaOf(accessToken).accessTokenExp;
+    if (item.addedAt)
+        acc.addedAt = String(item.addedAt);
+    if (email)
+        acc.email = email;
+    if (userId)
+        acc.userId = userId;
+    return acc;
+}
+async function exportAllAccounts() {
+    const records = getAccounts().map(exportAccountRecord).filter(Boolean);
+    if (!records.length)
+        return { ok: false, error: '没有可导出的账号' };
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(path.join(os.homedir(), 'Desktop', 'cursor-accounts-' + stamp + '.json')),
+        filters: { JSON: ['json'] },
+        saveLabel: '导出账号'
+    });
+    if (!uri)
+        return { ok: false, cancelled: true };
+    const payload = {
+        kind: 'cursor-account-manager',
+        version: 1,
+        exportedAt: now(),
+        accounts: records
+    };
+    try {
+        fs.writeFileSync(uri.fsPath, JSON.stringify(payload, null, 2), 'utf8');
+    }
+    catch (e) {
+        return { ok: false, error: (e && e.message) || '写文件失败' };
+    }
+    return { ok: true, count: records.length, file: uri.fsPath };
+}
+function importPreviewRows(accs) {
+    const existing = getAccounts();
+    let added = 0, updated = 0;
+    const rows = accs.map(acc => {
+        const hit = findAccountIndex(existing, acc) >= 0;
+        if (hit)
+            updated++;
+        else
+            added++;
+        return {
+            email: acc.email || '(未知邮箱)',
+            userTail: String(acc.userId || '').slice(-8),
+            note: normalizeNote(acc.note),
+            tokenType: acc.tokenType || (acc.refreshToken ? 'client' : 'web'),
+            action: hit ? 'update' : 'add'
+        };
+    });
+    return { rows, added, updated };
+}
+async function pickAccountBackup() {
+    const picked = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        filters: { JSON: ['json'] },
+        title: '选择账号备份 JSON',
+        openLabel: '预览导入'
+    });
+    if (!picked || !picked[0])
+        return { ok: false, cancelled: true };
+    let raw = '';
+    try {
+        raw = fs.readFileSync(picked[0].fsPath, 'utf8');
+    }
+    catch (e) {
+        return { ok: false, error: (e && e.message) || '读文件失败' };
+    }
+    const parsed = parseAccountBackup(raw);
+    if (!parsed.ok)
+        return parsed;
+    const accs = parsed.items.map(accountFromBackupItem).filter(Boolean);
+    if (!accs.length)
+        return { ok: false, error: '文件里没有可用的账号 token' };
+    pendingImportAccounts = accs;
+    const preview = importPreviewRows(accs);
+    return { ok: true, fileName: path.basename(picked[0].fsPath), added: preview.added, updated: preview.updated, rows: preview.rows };
+}
+async function commitPendingImport() {
+    const accs = pendingImportAccounts.slice();
+    pendingImportAccounts = [];
+    if (!accs.length)
+        return { ok: false, error: '没有待导入的账号，请重新选择文件' };
+    let added = 0, updated = 0;
+    for (const acc of accs) {
+        const r = await upsertAccount(acc);
+        if (r.duplicate)
+            updated++;
+        else
+            added++;
+    }
+    return { ok: true, added, updated, total: accs.length };
+}
+function exportAccountSession(acc) {
+    if (!acc)
+        return '';
+    const blob = acc.authBlob || {};
+    const accessToken = unquote(blob['cursorAuth/accessToken'] || '');
+    const userId = normUserId(acc.userId || blob['cursorAuth/userId'] || '');
+    const refreshToken = unquote(acc.refreshToken || blob['cursorAuth/refreshToken'] || '');
+    if (userId && accessToken && refreshToken && refreshToken !== accessToken)
+        return userId + '::' + accessToken + '::' + refreshToken;
+    if (userId && accessToken)
+        return userId + '::' + accessToken;
+    return accessToken || '';
 }
 function sessionCookieValueOf(acc) {
     if (!acc)

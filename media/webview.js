@@ -38,6 +38,15 @@
       render();
     } else if (data && data.type === 'toast') {
       showToast(String(data.text || ''));
+    } else if (data && data.type === 'importPreview') {
+      dialog = {
+        type: 'acctImportPreview',
+        fileName: String(data.fileName || ''),
+        added: Number(data.added || 0),
+        updated: Number(data.updated || 0),
+        rows: Array.isArray(data.rows) ? data.rows : []
+      };
+      render();
     } else if (data && data.type === 'sessions') {
       dialog = {
         type: 'sessions',
@@ -161,6 +170,8 @@
       + (open ? '<div class="moreMenu" data-stop="1">'
         + '<button data-action="' + renewAction + '" data-id="' + attr(x.id) + '">' + esc(renewLabel) + '</button>'
         + '<button data-action="acctNote" data-id="' + attr(x.id) + '">' + (String(x.note || '').trim() ? '改备注' : '备注') + '</button>'
+        + '<button data-action="acctCopyEmail" data-id="' + attr(x.id) + '">复制邮箱</button>'
+        + '<button data-action="acctCopyToken" data-id="' + attr(x.id) + '">复制 Token</button>'
         + '<button data-action="acctDashboard" data-id="' + attr(x.id) + '">进控制台</button>'
         + '<button data-action="acctSessions" data-id="' + attr(x.id) + '">查看设备</button>'
         + '<button data-action="acctSwitch" data-id="' + attr(x.id) + '">切换账号</button>'
@@ -176,7 +187,7 @@
       const isWeb = (x.tokenType === 'web' || x.noRefresh) && x.source !== 'currentLogin';
       return '<div class="acctCard' + (x.isCurrent ? ' cur' : '') + '">'
         + '<div class="acctTop">'
-          + '<div class="acctId"><b title="' + attr(x.email || '') + '">' + esc(x.email || '(未知邮箱)') + '</b>'
+          + '<div class="acctId"><button class="acctEmail" data-action="acctCopyEmail" data-id="' + attr(x.id) + '" title="点击复制邮箱">' + esc(x.email || '(未知邮箱)') + '</button>'
             + acctPlanBadge(x)
             + acctNoteBadge(x)
             + (x.isCurrent ? '<span class="usingPill">使用中</span>' : '')
@@ -209,7 +220,11 @@
         + '<button class="btn acctAddBtn" data-action="acctTokenDialog">Token 导入</button>'
         + '<button class="btn acctAddBtn" data-action="acctAddCurrent" title="读取本机 Cursor 当前登录态">导入本机</button>'
       + '</div>'
-      + '<p class="acctAddHint">推荐浏览器授权（可续期）。切换后必须完整退出 Cursor 再打开，Reload 不够。</p>'
+      + '<div class="acctAddRow acctBackupRow">'
+        + '<button class="btn acctAddBtn" data-action="acctExportAll" title="导出全部账号为 JSON（含 token）">导出全部</button>'
+        + '<button class="btn acctAddBtn" data-action="acctImportAll" title="从 JSON 备份导入，同号会更新">导入备份</button>'
+      + '</div>'
+      + '<p class="acctAddHint">推荐浏览器授权（可续期）。切换后必须完整退出 Cursor 再打开，Reload 不够。导出是 JSON，里面有全部 token，别传到网上。</p>'
       + '<div class="acctSecHead"><h4>账号列表</h4><span class="acctCount">' + accts.length + '</span></div>'
       + '<div class="acctList">' + accountCards() + '</div>'
       + '</div>';
@@ -221,7 +236,7 @@
     return accts.map(function (x) {
       const hint = (x.botHasLimit || x.botPercent != null) ? resetHint(x.botResetAt) : '无周额度';
       return '<div class="botRow' + (x.isCurrent ? ' cur' : '') + '">'
-        + '<b title="' + attr(x.email || '') + '">' + esc(x.email || '(未知)') + '</b>'
+        + '<button class="acctEmail" data-action="acctCopyEmail" data-id="' + attr(x.id) + '" title="点击复制邮箱">' + esc(x.email || '(未知)') + '</button>'
         + quotaCol('Grok Bot', (x.botHasLimit || x.botPercent != null) ? x.botPercent : null, hint)
         + '</div>';
     }).join('');
@@ -257,6 +272,19 @@
       + '<div class="acctSecHead"><h4>各账号 Bot 额度</h4></div>'
       + '<div class="botList">' + grokBotRows() + '</div>'
       + '</div>';
+  }
+
+  function backupPreviewList(rows, mode) {
+    if (!rows.length) return '<p class="dialogHint">没有账号</p>';
+    return '<div class="prevList">' + rows.map(function (x) {
+      const kind = mode === 'import' ? (x.action === 'update' ? '更新' : '新增') : (x.tokenType === 'web' ? 'web' : '可续期');
+      const cls = mode === 'import' ? (x.action === 'update' ? 'upd' : 'add') : (x.tokenType === 'web' ? 'upd' : 'add');
+      return '<div class="prevRow">'
+        + '<div><b>' + esc(x.email || '(未知邮箱)') + '</b>'
+        + '<span>' + (x.note ? esc(x.note) + ' · ' : '') + (x.userTail ? '…' + esc(x.userTail) : '') + '</span></div>'
+        + '<span class="prevAct ' + cls + '">' + esc(kind) + '</span>'
+        + '</div>';
+    }).join('') + '</div>';
   }
 
   function dialogHtml() {
@@ -298,6 +326,20 @@
           + (String(dialog.draft || '').trim() ? '<button class="btn danger" data-action="acctNoteClear">清除</button>' : '')
           + '<button class="btn primary" data-action="acctNoteConfirm">保存备注</button>'
         + '</div></div></div>';
+    }
+    if (dialog.type === 'acctExportPreview') {
+      const rows = dialog.rows || [];
+      return '<div class="modal" data-action="cancelDialog"><div class="dialog wide" data-stop="1"><h3>导出预览</h3>'
+        + '<p class="dialogHint">将导出 <b>' + rows.length + '</b> 个账号到 JSON。文件含明文 token，别传到网上。</p>'
+        + backupPreviewList(rows, 'export')
+        + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">取消</button><button class="btn primary" data-action="acctExportConfirm">导出到文件</button></div></div></div>';
+    }
+    if (dialog.type === 'acctImportPreview') {
+      const rows = dialog.rows || [];
+      return '<div class="modal" data-action="cancelDialog"><div class="dialog wide" data-stop="1"><h3>导入预览</h3>'
+        + '<p class="dialogHint">' + (dialog.fileName ? esc(dialog.fileName) + ' · ' : '') + '共 ' + rows.length + ' 个 · 新增 ' + (dialog.added || 0) + ' · 更新 ' + (dialog.updated || 0) + '。确认后才写入，列表不会先被清空。</p>'
+        + backupPreviewList(rows, 'import')
+        + '<div class="dialogActions"><button class="btn" data-action="acctImportCancel">取消</button><button class="btn primary" data-action="acctImportConfirmAll">确认导入</button></div></div></div>';
     }
     if (dialog.type === 'acctImport') {
       return '<div class="modal" data-action="cancelDialog"><div class="dialog wide" data-stop="1"><h3>Token 导入账号</h3>'
@@ -421,6 +463,35 @@
         dialog = null;
         render();
       } break;
+      case 'acctExportAll': {
+        const rows = ((state && state.accounts) || []).map(function (x) {
+          return { email: x.email || '(未知邮箱)', userTail: x.userTail || '', note: x.note || '', tokenType: x.tokenType || (x.noRefresh ? 'web' : 'client') };
+        });
+        if (!rows.length) { showToast('没有可导出的账号'); break; }
+        dialog = { type: 'acctExportPreview', rows: rows };
+        render();
+      } break;
+      case 'acctExportConfirm':
+        dialog = null;
+        post('accountExportAll');
+        showToast('选择保存位置…');
+        render();
+        break;
+      case 'acctImportAll':
+        post('accountImportAll');
+        showToast('选择备份 JSON…');
+        break;
+      case 'acctImportConfirmAll':
+        dialog = null;
+        post('accountImportConfirm');
+        showToast('正在导入…');
+        render();
+        break;
+      case 'acctImportCancel':
+        dialog = null;
+        post('accountImportCancel');
+        render();
+        break;
       case 'acctDeepLogin': post('accountDeepLogin', {}); showToast('即将打开浏览器登录 Cursor...'); break;
       case 'acctUpgradeToken': openMenuId = ''; post('accountUpgradeToken', { id: el.getAttribute('data-id') }); showToast('即将打开浏览器升级该账号...'); break;
       case 'acctAddCurrent': post('accountAddCurrent', {}); showToast('正在读取本机 Cursor 登录态...'); break;
@@ -440,6 +511,24 @@
         dialog = null;
         render();
         break;
+      case 'acctCopyEmail': {
+        const id = el.getAttribute('data-id') || '';
+        const acc = (state.accounts || []).find((x) => x.id === id) || {};
+        const email = String(acc.email || '').trim();
+        openMenuId = '';
+        if (!email || email === '(未知邮箱)' || email === '(未知)') {
+          showToast('没有邮箱可复制');
+          break;
+        }
+        post('copyText', { text: email });
+        showToast('已复制邮箱');
+      } break;
+      case 'acctCopyToken': {
+        const id = el.getAttribute('data-id') || '';
+        openMenuId = '';
+        post('accountCopyToken', { id });
+        showToast('已复制 Token');
+      } break;
       case 'acctNote': {
         const id = el.getAttribute('data-id') || '';
         const acc = (state.accounts || []).find((x) => x.id === id) || {};
@@ -512,7 +601,12 @@
           render();
         }
         break;
-      case 'cancelDialog': dialog = null; render(); break;
+      case 'cancelDialog':
+        if (dialog && dialog.type === 'acctImportPreview')
+          post('accountImportCancel');
+        dialog = null;
+        render();
+        break;
       case 'retryRestartLater': retryRestart = null; restarting = false; render(); break;
       case 'retryRestartNow':
         if (restarting) break;

@@ -15,11 +15,11 @@
   </style>
 </head>
 <body>
-  <div class="previewBar">这是<strong>界面预览</strong>。备注可以改，其它按钮不会真切号。侧栏宽度按插件面板模拟。</div>
+  <div class="previewBar">这是<strong>界面预览</strong>。可点邮箱复制、导出/导入看弹窗。不会真切号、也不会写备份文件。</div>
   <div class="stage"><div class="phone"><div id="app"></div></div></div>
   <script>
     const previewState = {
-        version: '2.2.5-preview',
+        version: '2.2.7-preview',
       sand: { patched: false, version: '3.4.20', sand: 0, unpatched: 5, error: '' },
       account: { email: 'main@example.com', label: 'g', plan: 'ultra', planLabel: 'Ultra', enabled: true },
       accounts: [
@@ -56,7 +56,36 @@
     window.acquireVsCodeApi = function () {
       return {
         postMessage: function (msg) {
+          if (msg && msg.type === 'ready') return;
           const t = document.querySelector('.previewBar');
+          if (msg && msg.type === 'accountImportAll') {
+            window.postMessage({
+              type: 'importPreview',
+              fileName: 'cursor-accounts-demo.json',
+              added: 1,
+              updated: 2,
+              rows: previewState.accounts.map(function (x, i) {
+                return {
+                  email: x.email,
+                  userTail: x.userTail,
+                  note: x.note || '',
+                  tokenType: x.tokenType,
+                  action: i === 2 ? 'add' : 'update'
+                };
+              })
+            }, '*');
+            if (t) t.innerHTML = '预览：已打开导入预览（演示数据，不会写文件）';
+            return;
+          }
+          if (msg && (msg.type === 'accountExportAll' || msg.type === 'accountImportConfirm' || msg.type === 'accountImportCancel')) {
+            if (t) t.innerHTML = '预览：已拦截 <b>' + msg.type + '</b>（不会读写备份文件）';
+            return;
+          }
+          if (msg && (msg.type === 'copyText' || msg.type === 'accountCopyEmail' || msg.type === 'accountCopyToken')) {
+            const text = msg.type === 'copyText' ? String(msg.text || '') : (msg.type === 'accountCopyToken' ? 'demo-token' : '');
+            if (t) t.innerHTML = '预览：已复制 <b>' + (text || msg.type) + '</b>（浏览器剪贴板未写）';
+            return;
+          }
           if (msg && msg.type === 'accountSetNote') {
             const acc = previewState.accounts.find((x) => x.id === msg.id);
             if (acc) acc.note = String(msg.note || '').replace(/\s+/g, ' ').trim().slice(0, 24);
