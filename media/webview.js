@@ -163,14 +163,12 @@
   }
   function moreMenu(x) {
     const open = openMenuId === x.id;
-    const renewAction = (x.noRefresh || x.tokenType === 'web') ? 'acctUpgradeToken' : 'acctRefreshToken';
-    const renewLabel = (x.noRefresh || x.tokenType === 'web') ? '升级授权' : '令牌续期';
+    const canRenew = !(x.noRefresh || x.tokenType === 'web');
     return '<div class="moreWrap">'
       + '<button class="toolBtn moreBtn" data-action="acctMore" data-id="' + attr(x.id) + '" title="更多">更多</button>'
       + (open ? '<div class="moreMenu" data-stop="1">'
-        + '<button data-action="' + renewAction + '" data-id="' + attr(x.id) + '">' + esc(renewLabel) + '</button>'
-        + '<button data-action="acctNote" data-id="' + attr(x.id) + '">' + (String(x.note || '').trim() ? '改备注' : '备注') + '</button>'
-        + '<button data-action="acctCopyEmail" data-id="' + attr(x.id) + '">复制邮箱</button>'
+        + (canRenew ? '<button data-action="acctRefreshToken" data-id="' + attr(x.id) + '">令牌续期</button>' : '')
+        + '<button data-action="acctNote" data-id="' + attr(x.id) + '">添加备注</button>'
         + '<button data-action="acctCopyToken" data-id="' + attr(x.id) + '">复制 Token</button>'
         + '<button data-action="acctDashboard" data-id="' + attr(x.id) + '">进控制台</button>'
         + '<button data-action="acctSessions" data-id="' + attr(x.id) + '">查看设备</button>'
@@ -185,19 +183,17 @@
     if (!accts.length) return '<div class="acctEmpty">暂无账号。用上方三个按钮添加。</div>';
     return accts.map(function (x) {
       const isWeb = (x.tokenType === 'web' || x.noRefresh) && x.source !== 'currentLogin';
+      const tags = (acctPlanBadge(x) + acctNoteBadge(x)).trim();
       return '<div class="acctCard' + (x.isCurrent ? ' cur' : '') + '">'
         + '<div class="acctTop">'
-          + '<div class="acctId"><button class="acctEmail" data-action="acctCopyEmail" data-id="' + attr(x.id) + '" title="点击复制邮箱">' + esc(x.email || '(未知邮箱)') + '</button>'
-            + acctPlanBadge(x)
-            + acctNoteBadge(x)
-            + (x.isCurrent ? '<span class="usingPill">使用中</span>' : '')
-          + '</div>'
+          + '<button class="acctEmail" data-action="acctCopyEmail" data-id="' + attr(x.id) + '" title="点击复制邮箱">' + esc(x.email || '(未知邮箱)') + '</button>'
           + '<div class="acctTools">'
             + '<button class="toolBtn" data-action="acctRefreshOne" data-id="' + attr(x.id) + '" title="刷新该账号额度">刷新</button>'
             + acctOverageToggle(x)
             + moreMenu(x)
           + '</div>'
         + '</div>'
+        + (tags ? '<div class="acctTags">' + tags + '</div>' : '')
         + acctQuotaRow(x)
         + (isWeb ? '<div class="acctWarn">Web 令牌只读、无法续期，发消息可能弹登录框</div>' : '')
       + '</div>';
@@ -221,7 +217,7 @@
         + '<button class="btn acctAddBtn" data-action="acctAddCurrent" title="读取本机 Cursor 当前登录态">导入本机</button>'
       + '</div>'
       + '<div class="acctAddRow acctBackupRow">'
-        + '<button class="btn acctAddBtn" data-action="acctExportAll" title="导出全部账号为 JSON（含 token）">导出全部</button>'
+        + '<button class="btn acctAddBtn" data-action="acctExportAll" title="导出备份为 JSON（含 token）">导出备份</button>'
         + '<button class="btn acctAddBtn" data-action="acctImportAll" title="从 JSON 备份导入，同号会更新">导入备份</button>'
       + '</div>'
       + '<p class="acctAddHint">推荐浏览器授权（可续期）。切换后必须完整退出 Cursor 再打开，Reload 不够。导出是 JSON，里面有全部 token，别传到网上。</p>'

@@ -4,22 +4,32 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>账号管理 · 界面预览</title>
-  <link rel="stylesheet" href="media/webview.css">
+  <link rel="stylesheet" href="media/webview.css?v=228">
   <style>
     body{display:flex;flex-direction:column;background:#07090d}
-    .previewBar{flex:none;padding:10px 14px;background:#0b0e14;border-bottom:1px solid #30394a;color:#9aa4b8;font:12px/1.4 sans-serif}
+    .previewBar{flex:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:#0b0e14;border-bottom:1px solid #30394a;color:#9aa4b8;font:12px/1.4 sans-serif}
     .previewBar b{color:#ecf2ff}
-    .stage{flex:1;min-height:0;display:flex;justify-content:center;padding:16px}
-    .phone{width:360px;max-width:100%;height:min(760px, calc(100vh - 72px));border:1px solid #30394a;border-radius:12px;overflow:hidden;box-shadow:0 16px 40px rgba(0,0,0,.35)}
+    .previewBar .size{margin-left:auto;color:#ecf2ff;font-variant-numeric:tabular-nums}
+    .previewBar button{height:24px;padding:0 8px;border:1px solid #30394a;border-radius:6px;background:#13171f;color:#c8d6ee;cursor:pointer}
+    .previewBar button:hover,.previewBar button.on{border-color:#d4a225;color:#ffe9a6}
+    .stage{flex:1;min-height:0;display:flex;justify-content:center;align-items:flex-start;padding:16px;overflow:auto}
+    .phone{width:300px;min-width:240px;max-width:min(560px,100%);height:min(760px, calc(100vh - 88px));min-height:420px;border:1px solid #30394a;border-radius:12px;overflow:hidden;resize:both;box-shadow:0 16px 40px rgba(0,0,0,.35);position:relative}
+    .phone::after{content:'';position:absolute;right:2px;bottom:2px;width:14px;height:14px;pointer-events:none;background:linear-gradient(135deg,transparent 50%,#7b8a9e 50%)}
     #app{height:100%}
   </style>
 </head>
 <body>
-  <div class="previewBar">这是<strong>界面预览</strong>。可点邮箱复制、导出/导入看弹窗。不会真切号、也不会写备份文件。</div>
-  <div class="stage"><div class="phone"><div id="app"></div></div></div>
+  <div class="previewBar">
+    <span>这是<strong>界面预览</strong>。右下角可拖动拉伸。当前账号只靠卡片描边区分。</span>
+    <button type="button" data-w="260">窄 260</button>
+    <button type="button" data-w="300">侧栏 300</button>
+    <button type="button" data-w="360">宽 360</button>
+    <span class="size" id="previewSize">300 × —</span>
+  </div>
+  <div class="stage"><div class="phone" id="phone"><div id="app"></div></div></div>
   <script>
     const previewState = {
-        version: '2.2.7-preview',
+        version: '2.2.8-preview',
       sand: { patched: false, version: '3.4.20', sand: 0, unpatched: 5, error: '' },
       account: { email: 'main@example.com', label: 'g', plan: 'ultra', planLabel: 'Ultra', enabled: true },
       accounts: [
@@ -99,6 +109,31 @@
     };
   </script>
   <script src="media/webview.js"></script>
-  <script>pushPreviewState();</script>
+  <script>
+    pushPreviewState();
+    (function () {
+      const phone = document.getElementById('phone');
+      const size = document.getElementById('previewSize');
+      function markW(w) {
+        document.querySelectorAll('.previewBar button[data-w]').forEach(function (b) {
+          b.classList.toggle('on', Number(b.getAttribute('data-w')) === w);
+        });
+      }
+      function report() {
+        const w = Math.round(phone.getBoundingClientRect().width);
+        const h = Math.round(phone.getBoundingClientRect().height);
+        if (size) size.textContent = w + ' × ' + h;
+        markW(w);
+      }
+      document.querySelectorAll('.previewBar button[data-w]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          phone.style.width = b.getAttribute('data-w') + 'px';
+          report();
+        });
+      });
+      if (window.ResizeObserver) new ResizeObserver(report).observe(phone);
+      report();
+    })();
+  </script>
 </body>
 </html>
