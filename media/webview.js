@@ -362,7 +362,7 @@
         + '<button class="btn danger" data-action="acctRevokeConfirm" data-sid="' + attr(kick) + '">确认踢下线</button></div></div>' : '';
       return '<div class="modal" data-action="cancelDialog"><div class="dialog wide" data-stop="1"><h3>登录设备</h3>'
         + '<p class="dialogHint">' + esc(dialog.email || '') + ' · ' + rows.length + ' 台</p>'
-        + list + confirm
+        + '<div class="sessList">' + list + '</div>' + confirm
         + '<p class="dialogHint">对应 dashboard Settings → Active Sessions。踢下线后最多 10 分钟生效。</p>'
         + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">关闭</button></div></div></div>';
     }
