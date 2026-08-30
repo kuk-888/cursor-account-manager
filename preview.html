@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>账号管理 · 界面预览</title>
-  <link rel="stylesheet" href="media/webview.css?v=228">
+  <link rel="stylesheet" href="media/webview.css?v=229">
   <style>
     body{display:flex;flex-direction:column;background:#07090d}
     .previewBar{flex:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:#0b0e14;border-bottom:1px solid #30394a;color:#9aa4b8;font:12px/1.4 sans-serif}
@@ -29,7 +29,7 @@
   <div class="stage"><div class="phone" id="phone"><div id="app"></div></div></div>
   <script>
     const previewState = {
-        version: '2.2.8-preview',
+        version: '2.2.9-preview',
       sand: { patched: false, version: '3.4.20', sand: 0, unpatched: 5, error: '' },
       account: { email: 'main@example.com', label: 'g', plan: 'ultra', planLabel: 'Ultra', enabled: true },
       accounts: [
@@ -101,6 +101,24 @@
             if (acc) acc.note = String(msg.note || '').replace(/\s+/g, ' ').trim().slice(0, 24);
             if (t) t.innerHTML = '预览：已保存备注 <b>' + (acc && acc.note ? acc.note : '（已清除）') + '</b>';
             pushPreviewState();
+            return;
+          }
+          if (msg && msg.type === 'accountListSessions') {
+            const names = ['MacBook Pro', 'Windows 台式机', 'iPhone', '公司 iMac', '旧 MacBook Air', '平板', '测试机 A', '测试机 B', '家里 PC', '备用机', '浏览器会话', '未知设备'];
+            window.postMessage({
+              type: 'sessions',
+              accountId: String(msg.id || ''),
+              email: (previewState.accounts.find((x) => x.id === msg.id) || {}).email || '',
+              sessions: names.map(function (n, i) {
+                return {
+                  sessionId: 'sess_demo_' + i,
+                  type: i % 3 === 0 ? 'desktop' : (i % 3 === 1 ? 'mobile' : 'web'),
+                  typeLabel: n,
+                  createdAt: new Date(Date.now() - (i + 1) * 86400000 * 3).toISOString()
+                };
+              })
+            }, '*');
+            if (t) t.innerHTML = '预览：返回 <b>12 台演示设备</b>，列表内部滚动，确认/关闭按钮固定可见';
             return;
           }
           if (t) t.innerHTML = '预览模式已拦截：<b>' + (msg && msg.type || '') + '</b>（不会写 Cursor 登录态）';
