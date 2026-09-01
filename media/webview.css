@@ -46,6 +46,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 .sandBadge.off{background:#2a3344;color:#a0aec0}
 .sandBadge.warn{background:#6b5020;color:#ffe9b0}
 .sandBadge.err{background:#5a2a35;color:#ffd5d5}
+.sandNote{margin:0 0 8px;padding:7px 9px;border:1px solid #6b5020;border-left:3px solid #d4a225;border-radius:var(--radius-sm);background:#1a160c;font-size:12px;font-weight:600;color:#ffe9a6;line-height:1.45}
 .sandHint{margin:0 0 8px;font-size:11px;color:var(--muted);line-height:1.45}
 .sandHint code{background:var(--surface);padding:1px 4px;border-radius:4px}
 .sandBtns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}

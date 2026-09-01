@@ -659,10 +659,6 @@ class AccountProvider {
                     this.postState();
                 }
             }
-            if (msg.type === 'sandRefresh') {
-                refreshSandStatusBar();
-                this.postState();
-            }
             if (msg.type === 'sandApply') {
                 try {
                     const result = await applySandPatchFromUi();
@@ -2854,6 +2850,8 @@ function sandStatusForClient() {
             version: s.version || '',
             sand: (s.totals && s.totals.sandAssignments) || 0,
             unpatched: (s.totals && s.totals.unpatchedAssignments) || 0,
+            streamMode: !!s.streamMode,
+            streamPartial: !!s.streamPartial,
             error: '',
             auto: sandAutoPatchEnabled()
         };
@@ -2875,7 +2873,9 @@ function refreshSandStatusBar() {
     }
     else if (s.patched) {
         sandStatusBar.text = '$(check) Sand 已注入';
-        sandStatusBar.tooltip = 'x-cursor-client-type = sand\n点击打开账号管理';
+        sandStatusBar.tooltip = s.streamMode
+            ? 'Sand Stream 已齐 · 请求头 sand\n点击打开账号管理'
+            : 'x-cursor-client-type = sand\n点击打开账号管理';
     }
     else {
         sandStatusBar.text = '$(circle-slash) Sand 未注入';
