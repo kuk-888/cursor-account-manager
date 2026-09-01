@@ -1,6 +1,6 @@
 # Cursor 账号管理
 
-本机 Cursor 多账号工具：切换账号、管理登录态、查看额度、踢下线、提取 token。2.3 起一键注入改为 Cursor Grok Bot 路由模式（Sand Stream），**请先把 Cursor 升级到最新版**再注入。
+支持在 Cursor 调用 Grok Bot 高级模式额度，突破使用上限。也可切换账号、管理登录态、查看额度、踢设备、提取本机/浏览器 token。2.3 起一键注入为 Grok Bot 路由模式（Sand Stream），**请先把 Cursor 升级到最新版**再注入。
 
 侧栏名称：**账号管理**。命令面板搜「账号管理」或 `Cursor Account Manager`。
 
