@@ -126,7 +126,17 @@ function analyzeText(text) {
 }
 
 function emptyStreamTotals() {
-  return { client: 0, eligibility: 0, managedLocal: 0, runtimeLoad: 0, directStream: 0, agentHost: 0, identity: 0, legacy: 0 };
+  return {
+    client: 0,
+    eligibility: 0,
+    managedLocal: 0,
+    runtimeLoad: 0,
+    moveExec: 0,
+    directStream: 0,
+    agentHost: 0,
+    identity: 0,
+    legacy: 0
+  };
 }
 
 function addStreamTotals(acc, item) {
@@ -170,6 +180,7 @@ const LEFTOVER_MARKERS = [
   'SAND_DIRECT_INFERENCE_STREAM_V1',
   'SAND_AGENT_HOST_ENABLEMENT_V1',
   'SAND_LOCAL_RUNTIME_LOAD_V1',
+  'SAND_AGENT_HOST_MOVE_EXEC_V1',
   'SAND_AGENT_HOST_IDENTITY_V1',
   'KC_SAND_CLIENT_V1',
   'KC_SAND_ELIGIBILITY_V1'
