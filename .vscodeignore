@@ -7,3 +7,6 @@ docs/**
 node_modules/**
 .git/**
 .gitignore
+*.sync.star
+**/*.sync.star
+task.sync.star
