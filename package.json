@@ -1,8 +1,8 @@
 {
   "name": "cursor-account-manager",
   "displayName": "Cursor 账号管理",
-  "description": "Cursor 多账号管理：切换账号、管理登录态、查看额度、踢设备、提取本机/浏览器 token，并把客户端类型改为 sand，方便在 Cursor 里用 Grok Bot。",
-  "version": "2.2.9",
+  "description": "Cursor 多账号管理：切换账号、管理登录态、查看额度、踢设备、提取本机/浏览器 token。一键注入对齐 Sand Stream（请求头 sand + 3.18.9 Agent 直推），卸载兼容本插件备份和官方 sand 脚本标记。",
+  "version": "2.3.1",
   "publisher": "local",
   "license": "MIT",
   "repository": {

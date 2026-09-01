@@ -246,17 +246,17 @@
     const detail = s.error
       ? esc(s.error)
       : (on
-        ? ('已注入 · Cursor ' + esc(s.version || '?') + ' · ' + esc(s.sand || 0) + ' 处请求头为 sand')
+        ? ('已注入 · Cursor ' + esc(s.version || '?') + ' · ' + esc(s.sand || 0) + ' 处请求头为 sand' + (s.streamMode ? ' · Stream 已齐' : (s.streamPartial ? ' · 有 Stream 标记' : '')))
         : ((s.sand || 0) > 0
           ? ('部分注入 · 已改 ' + esc(s.sand || 0) + ' / 未改 ' + esc(s.unpatched || 0))
           : ('未注入 · 还有 ' + esc(s.unpatched || 0) + ' 处仍是 ide')));
     return '<div class="sandCard' + (on ? ' on' : '') + '">'
       + '<div class="sandHead"><h4>Sand 注入</h4><span class="sandBadge ' + badgeCls + '">' + badge + '</span></div>'
-      + '<p class="sandHint">注入后 Cursor 请求头变成 <code>sand</code>，对话走 Bot 额度，才能选 Grok Bot。写完必须完整退出再打开。</p>'
+      + '<p class="sandNote">注意事项：请将当前 Cursor 升级到最新版。</p>'
+      + '<p class="sandHint">一键注入按最新 Sand Stream 写（请求头 <code>sand</code> + Agent 本机直推）。一键卸载会同时清掉旧请求头补丁和新 Stream 标记，不留残留。写完必须完整退出再打开，Reload 不够。</p>'
       + '<div class="sandBtns">'
         + '<button class="btn primary" data-action="sandApplyAsk"' + (on ? ' disabled' : '') + '>一键注入</button>'
         + '<button class="btn danger" data-action="sandRestoreAsk">一键卸载</button>'
-        + '<button class="btn" data-action="sandRefresh">刷新状态</button>'
       + '</div>'
       + '<div class="sandMeta">' + detail + '</div>'
       + '</div>';
@@ -287,12 +287,12 @@
     if (!dialog) return '';
     if (dialog.type === 'confirmSandApply') {
       return '<div class="modal" data-action="cancelDialog"><div class="dialog" data-stop="1"><h3>注入 Sand</h3>'
-        + '<p class="restartMsg">会改 Cursor 安装目录里的请求头 <code>x-cursor-client-type</code> 为 <code>sand</code>，先备份再写。写完必须完整退出再打开，Reload 不够。</p>'
+        + '<p class="restartMsg">请先把当前 Cursor 升级到最新版。注入按最新 Sand Stream 写：请求头 <code>sand</code> + Agent 本机直推。先备份再写。写完必须完整退出再打开，Reload 不够。</p>'
         + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">取消</button><button class="btn primary" data-action="sandApplyConfirm">一键注入</button></div></div></div>';
     }
     if (dialog.type === 'confirmSandRestore') {
       return '<div class="modal" data-action="cancelDialog"><div class="dialog" data-stop="1"><h3>卸载 Sand</h3>'
-        + '<p class="restartMsg">会还原备份。卸完必须完整退出再打开，Reload 不够。</p>'
+        + '<p class="restartMsg">会同时卸掉旧请求头补丁和新 Stream 标记（含本插件备份、官方 sand 脚本）。卸完检查无残留。必须完整退出再打开，Reload 不够。</p>'
         + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">取消</button><button class="btn danger" data-action="sandRestoreConfirm">一键卸载</button></div></div></div>';
     }
     if (dialog.type === 'confirmSwitch') {
@@ -580,7 +580,6 @@
       case 'sandApplyConfirm': dialog = null; post('sandApply'); showToast('正在注入 Sand...'); render(); break;
       case 'sandRestoreAsk': dialog = { type: 'confirmSandRestore' }; render(); break;
       case 'sandRestoreConfirm': dialog = null; post('sandRestore'); showToast('正在卸载 Sand...'); render(); break;
-      case 'sandRefresh': post('sandRefresh'); showToast('正在读取 Sand 状态...'); break;
       case 'acctOverageToggle': {
         const id = el.getAttribute('data-id') || '';
         const mode = el.getAttribute('data-mode') || 'unlimited';
