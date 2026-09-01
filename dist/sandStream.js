@@ -1,4 +1,4 @@
-// Sand Stream 补丁（对齐 sand_stream_installer 1.2.2 / Cursor 3.18.9）
+// Sand Stream 补丁（对齐 sand_stream_installer 1.2.3 / Cursor 3.18.9）
 // 注入与卸载都走同一套标记，兼容该脚本装过的客户端。
 const crypto = require("crypto");
 const path = require("path");
@@ -10,6 +10,7 @@ const SAND_MANAGED_LOCAL_ROUTE_MARKER = "/*SAND_MANAGED_LOCAL_ROUTE_V1*/";
 const SAND_DIRECT_STREAM_MARKER = "/*SAND_DIRECT_INFERENCE_STREAM_V1*/";
 const SAND_AGENT_HOST_ENABLEMENT_MARKER = "/*SAND_AGENT_HOST_ENABLEMENT_V1*/";
 const SAND_LOCAL_RUNTIME_LOAD_MARKER = "/*SAND_LOCAL_RUNTIME_LOAD_V1*/";
+const SAND_AGENT_HOST_MOVE_EXEC_MARKER = "/*SAND_AGENT_HOST_MOVE_EXEC_V1*/";
 const SAND_AGENT_HOST_IDENTITY_MARKER = "/*SAND_AGENT_HOST_IDENTITY_V1*/";
 const LEGACY_SAND_CLIENT_MARKER = "/*KC_SAND_CLIENT_V1*/";
 const LEGACY_SAND_ELIGIBILITY_MARKER = "/*KC_SAND_ELIGIBILITY_V1*/";
@@ -51,6 +52,10 @@ const MANAGED_LOCAL_ROUTE_PATCHED =
 const LOCAL_RUNTIME_LOAD_ORIGINAL = "let t=!1;try{t=await r.cursor.checkFeatureGate(Ds)}";
 const LOCAL_RUNTIME_LOAD_PATCHED = "let t=!0;" + SAND_LOCAL_RUNTIME_LOAD_MARKER + "try{t=!0}";
 
+const AGENT_HOST_MOVE_EXEC_ORIGINAL =
+  "p=await Promise.resolve(r.cursor.checkFeatureGate(Us)).catch(()=>!1)";
+const AGENT_HOST_MOVE_EXEC_PATCHED = "p=!0" + SAND_AGENT_HOST_MOVE_EXEC_MARKER;
+
 const AGENT_HOST_IDENTITY_ORIGINAL = 'clientIdentity:{clientType:"ide"}';
 const AGENT_HOST_IDENTITY_PATCHED =
   'clientIdentity:{clientType:"sand"' + SAND_AGENT_HOST_IDENTITY_MARKER + "}";
@@ -77,6 +82,7 @@ function emptyStats() {
     migrated_eligibility: 0,
     managed_local_route: 0,
     local_runtime_load: 0,
+    agent_host_move_exec: 0,
     direct_stream: 0,
     agent_host_enablement: 0,
     agent_host_identity: 0,
@@ -93,6 +99,7 @@ function sumStats(s) {
     s.migrated_eligibility +
     s.managed_local_route +
     s.local_runtime_load +
+    s.agent_host_move_exec +
     s.direct_stream +
     s.agent_host_enablement +
     s.agent_host_identity
@@ -216,6 +223,12 @@ function applySandPatches(content) {
     stats.local_runtime_load += runtimeCount;
   }
 
+  const moveExecCount = next.split(AGENT_HOST_MOVE_EXEC_ORIGINAL).length - 1;
+  if (moveExecCount) {
+    next = next.split(AGENT_HOST_MOVE_EXEC_ORIGINAL).join(AGENT_HOST_MOVE_EXEC_PATCHED);
+    stats.agent_host_move_exec += moveExecCount;
+  }
+
   const identityCount = next.split(AGENT_HOST_IDENTITY_ORIGINAL).length - 1;
   if (identityCount) {
     next = next.split(AGENT_HOST_IDENTITY_ORIGINAL).join(AGENT_HOST_IDENTITY_PATCHED);
@@ -284,6 +297,12 @@ function removeSandPatches(content) {
     stats.local_runtime_load += runtimeCount;
   }
 
+  const moveExecCount = next.split(AGENT_HOST_MOVE_EXEC_PATCHED).length - 1;
+  if (moveExecCount) {
+    next = next.split(AGENT_HOST_MOVE_EXEC_PATCHED).join(AGENT_HOST_MOVE_EXEC_ORIGINAL);
+    stats.agent_host_move_exec += moveExecCount;
+  }
+
   const identityCount = next.split(AGENT_HOST_IDENTITY_PATCHED).length - 1;
   if (identityCount) {
     next = next.split(AGENT_HOST_IDENTITY_PATCHED).join(AGENT_HOST_IDENTITY_ORIGINAL);
@@ -311,6 +330,7 @@ function detectSand(content) {
     eligibility: content.split(SAND_ELIGIBILITY_MARKER).length - 1,
     managedLocal: content.split(SAND_MANAGED_LOCAL_ROUTE_MARKER).length - 1,
     runtimeLoad: content.split(SAND_LOCAL_RUNTIME_LOAD_MARKER).length - 1,
+    moveExec: content.split(SAND_AGENT_HOST_MOVE_EXEC_MARKER).length - 1,
     directStream: content.split(SAND_DIRECT_STREAM_MARKER).length - 1,
     agentHost: content.split(SAND_AGENT_HOST_ENABLEMENT_MARKER).length - 1,
     identity: content.split(SAND_AGENT_HOST_IDENTITY_MARKER).length - 1,
@@ -327,6 +347,7 @@ function hasSandMarkers(content) {
       d.eligibility +
       d.managedLocal +
       d.runtimeLoad +
+      d.moveExec +
       d.directStream +
       d.agentHost +
       d.identity +
@@ -336,7 +357,14 @@ function hasSandMarkers(content) {
 }
 
 function streamModeInstalled(d) {
-  return d.managedLocal > 0 && d.runtimeLoad > 0 && d.directStream > 0 && d.agentHost > 0 && d.identity > 0;
+  return (
+    d.managedLocal > 0 &&
+    d.runtimeLoad > 0 &&
+    d.moveExec > 0 &&
+    d.directStream > 0 &&
+    d.agentHost > 0 &&
+    d.identity > 0
+  );
 }
 
 function productChecksum(buf) {
