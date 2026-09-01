@@ -1,6 +1,6 @@
 # Cursor 账号管理
 
-本机 Cursor 多账号工具：切换账号、管理登录态、查看额度、踢下线、提取 token，还能把客户端类型改成 `sand`，方便在 Cursor 里用 Grok Bot。
+本机 Cursor 多账号工具：切换账号、管理登录态、查看额度、踢下线、提取 token。2.3 起一键注入改为 Cursor Grok Bot 路由模式（Sand Stream），**请先把 Cursor 升级到最新版**再注入。
 
 侧栏名称：**账号管理**。命令面板搜「账号管理」或 `Cursor Account Manager`。
 
@@ -26,8 +26,8 @@
 | **浏览器授权提取 Token** | 打开隔离浏览器走官方登录，拿到可自动续期的令牌 |
 | **Token / Cookie 导入** | 粘贴 `userId::accessToken`，有第三段 refreshToken 的可以自动续期 |
 | **一键导出 / 导入** | 导出全部账号为 JSON（先预览再保存）；导入前先看新增/更新清单。文件含明文 token，只放本机 |
-| **客户端类型改为 sand** | 先备份，再把安装目录里的 `x-cursor-client-type` 从 `ide` 改成 `sand` |
-| **在 Cursor 里用 Grok Bot** | 注入 Sand 之后请求走 Bot 额度，可用 Grok Bot 模型（同样需要完整重启） |
+| **Grok Bot 路由模式** | 一键注入按最新 Sand Stream 写（请求头 `sand` + Agent 本机直推）。**需将 Cursor 升级到最新版** |
+| **一键卸载** | 同时清掉旧请求头补丁和新 Stream 标记，不留残留；写完必须完整退出再打开 |
 
 ## 切换账号注意
 
@@ -71,5 +71,6 @@ npm run package
 ## 说明
 
 - 扩展 id：`local.cursor-account-manager`
-- Sand 会改 Cursor 安装文件，先备份再写；要还原用「一键卸载」
+- 注入会改 Cursor 安装文件，先备份再写。这是 Grok Bot 路由模式更新，需使用最新版 Cursor；旧版只能改到请求头，没有本机直推
+- 要还原用「一键卸载」，会同时卸掉旧补丁和新补丁
 - Token 只存在你这台电脑的扩展存储和 Cursor 自己的登录库里，不会上传到网上
