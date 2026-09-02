@@ -11,6 +11,29 @@ const VALUE = 'sand';
 
 const CANDIDATE_FILES = sandStream.TARGET_SPECS.map((spec) => spec.rel);
 
+// 2.1.0–2.2.9 只打这 4 个文件的无标记请求头。卸载/扫描必须永远覆盖它们，
+// 即使以后注入清单变短，旧 Release 打过的文件也要能卸掉。
+const LEGACY_HEADER_RELS = [
+  path.join('out', 'main.js'),
+  path.join('out', 'vs', 'workbench', 'workbench.desktop.main.js'),
+  path.join('out', 'vs', 'workbench', 'api', 'node', 'extensionHostProcess.js'),
+  path.join('out', 'vs', 'workbench', 'api', 'worker', 'extensionHostWorkerMain.js')
+];
+
+function uniqueRels(rels) {
+  const seen = new Set();
+  const out = [];
+  for (const rel of rels) {
+    const key = rel.split(path.sep).join('/');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(rel);
+  }
+  return out;
+}
+
+const SCAN_FILES = uniqueRels([...LEGACY_HEADER_RELS, ...CANDIDATE_FILES]);
+
 function sha256(data) {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
@@ -135,6 +158,13 @@ function emptyStreamTotals() {
     directStream: 0,
     agentHost: 0,
     identity: 0,
+    subagentRoute: 0,
+    subagentSession: 0,
+    taskTool: 0,
+    legacyTaskTool: 0,
+    actionRoute: 0,
+    resumeMode: 0,
+    completionWake: 0,
     legacy: 0
   };
 }
@@ -153,6 +183,7 @@ function reverseUnmarkedClientSand(text) {
       return replacer(...args);
     });
   };
+  // 2.1.0–2.2.9 无标记注入 + 2.3.1 之后 stream 没盖住的漏网请求头。
   replace(
     /(isGlass\s*\?\s*["']glass["']\s*:\s*)["']sand["']/g,
     (_match, prefix) => `${prefix}"ide"`
@@ -169,6 +200,10 @@ function reverseUnmarkedClientSand(text) {
     /(["']x-cursor-client-type["']\s*:\s*)["']sand["']/g,
     (_match, prefix) => `${prefix}"ide"`
   );
+  replace(
+    /(clientIdentity\s*:\s*\{\s*clientType\s*:\s*)["']sand["'](\s*\})/g,
+    (_match, prefix, suffix) => `${prefix}"ide"${suffix}`
+  );
   return { text, replacements };
 }
 
@@ -182,13 +217,20 @@ const LEFTOVER_MARKERS = [
   'SAND_LOCAL_RUNTIME_LOAD_V1',
   'SAND_AGENT_HOST_MOVE_EXEC_V1',
   'SAND_AGENT_HOST_IDENTITY_V1',
+  'SAND_MANAGED_SUBAGENT_ROUTE_V1',
+  'SAND_MANAGED_SUBAGENT_SESSION_V1',
+  'SAND_MANAGED_TASK_TOOL_V2',
+  'SAND_MANAGED_TASK_TOOL_V1',
+  'SAND_MANAGED_ACTION_ROUTE_V1',
+  'SAND_SUBAGENT_RESUME_AGENT_MODE_V1',
+  'SAND_SUBAGENT_COMPLETION_WAKE_V1',
   'KC_SAND_CLIENT_V1',
   'KC_SAND_ELIGIBILITY_V1'
 ];
 
 function leftoverMarkers(root) {
   const hits = [];
-  for (const { rel, abs } of activeCandidatePaths(root)) {
+  for (const { rel, abs } of scanCandidatePaths(root)) {
     const text = fs.readFileSync(abs, 'utf8');
     const markers = LEFTOVER_MARKERS.filter((marker) => text.includes(marker));
     if (markers.length) hits.push({ rel, markers });
@@ -209,6 +251,7 @@ function applyAllPatches(text) {
 }
 
 function uninstallAllPatches(text) {
+  // 先拆带标记的 Stream（2.3.1 / 1.2.3 / 1.2.6），再拆 2.1.0–2.2.9 无标记请求头。
   const streamed = sandStream.removeSandPatches(text);
   const headed = reverseUnmarkedClientSand(streamed.content);
   return {
@@ -243,16 +286,24 @@ function patchText(text) {
   return { text, replacements, analysis: analyzeText(text) };
 }
 
-function activeCandidatePaths(appRoot) {
-  return CANDIDATE_FILES
+function pathsFromRels(appRoot, rels) {
+  return rels
     .map((rel) => ({ rel, abs: path.join(appRoot, rel) }))
     .filter(({ abs }) => fs.existsSync(abs) && fs.statSync(abs).isFile());
+}
+
+function applyCandidatePaths(appRoot) {
+  return pathsFromRels(appRoot, CANDIDATE_FILES);
+}
+
+function scanCandidatePaths(appRoot) {
+  return pathsFromRels(appRoot, SCAN_FILES);
 }
 
 function inspect(appRoot) {
   const root = assertAppRoot(appRoot);
   const product = JSON.parse(fs.readFileSync(path.join(root, 'product.json'), 'utf8'));
-  const files = activeCandidatePaths(root).map(({ rel, abs }) => {
+  const files = scanCandidatePaths(root).map(({ rel, abs }) => {
     const data = fs.readFileSync(abs);
     const analysis = analyzeText(data.toString('utf8'));
     return { rel, sha256: sha256(data), ...analysis };
@@ -268,6 +319,7 @@ function inspect(appRoot) {
     { headerMentions: 0, unpatchedAssignments: 0, sandAssignments: 0, stream: emptyStreamTotals() }
   );
   const streamMode = sandStream.streamModeInstalled(totals.stream);
+  const streamLifecycle = sandStream.streamLifecycleInstalled(totals.stream);
   const headerPatched = totals.sandAssignments > 0 && totals.unpatchedAssignments === 0;
   const streamPartial = Object.values(totals.stream).some((n) => n > 0);
   return {
@@ -276,8 +328,9 @@ function inspect(appRoot) {
     files,
     totals,
     streamMode,
+    streamLifecycle,
     streamPartial,
-    patched: headerPatched || streamMode || (streamPartial && totals.unpatchedAssignments === 0 && totals.sandAssignments > 0)
+    patched: headerPatched || streamMode || streamLifecycle || (streamPartial && totals.unpatchedAssignments === 0 && totals.sandAssignments > 0)
   };
 }
 
@@ -352,7 +405,7 @@ function writeProductChecksums(root, changes) {
 
 function restoreInPlace(root) {
   const changes = [];
-  for (const { rel, abs } of activeCandidatePaths(root)) {
+  for (const { rel, abs } of scanCandidatePaths(root)) {
     const original = fs.readFileSync(abs);
     const result = uninstallAllPatches(original.toString('utf8'));
     if (result.text !== original.toString('utf8')) {
@@ -401,7 +454,7 @@ function applyPatchLocked({ appRoot, stateRoot, dryRun = false }) {
   const before = inspect(root);
   const changes = [];
 
-  for (const { rel, abs } of activeCandidatePaths(root)) {
+  for (const { rel, abs } of applyCandidatePaths(root)) {
     const original = fs.readFileSync(abs);
     const result = applyAllPatches(original.toString('utf8'));
     if (result.replacements > 0 && result.text !== original.toString('utf8')) {
@@ -559,19 +612,37 @@ function restoreLatestLocked({ appRoot, stateRoot, force = false }) {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   const backupDir = path.dirname(manifestPath);
 
+  let backupRefuseReason = '';
   for (const entry of manifest.entries) {
     const target = path.join(root, entry.rel);
     if (!fs.existsSync(target)) {
-      if (!force) throw new Error(`Refusing restore: target is missing: ${target}`);
+      if (!force) {
+        backupRefuseReason = `target is missing: ${entry.rel}`;
+        break;
+      }
       continue;
     }
     const currentHash = sha256(fs.readFileSync(target));
     if (!force && currentHash !== entry.patchedSha256) {
-      throw new Error(
-        `Refusing restore because ${entry.rel} changed after patching. ` +
-          `Expected ${entry.patchedSha256}, got ${currentHash}.`
-      );
+      backupRefuseReason = `${entry.rel} changed after the backup was taken`;
+      break;
     }
+  }
+
+  if (backupRefuseReason && !force) {
+    const inPlace = restoreInPlace(root);
+    if (inPlace.changed) {
+      return {
+        restored: inPlace.files,
+        backupDir,
+        after: inPlace.after,
+        inPlace: true,
+        backupSkipped: backupRefuseReason
+      };
+    }
+    throw new Error(
+      `Refusing restore because ${backupRefuseReason}, and no Sand Stream / header patch to reverse in place.`
+    );
   }
 
   const restored = [];
@@ -621,6 +692,9 @@ module.exports = {
   HEADER,
   VALUE,
   CANDIDATE_FILES,
+  SCAN_FILES,
+  LEGACY_HEADER_RELS,
+  LEFTOVER_MARKERS,
   analyzeText,
   applyPatch,
   defaultAppRoot,
@@ -631,6 +705,8 @@ module.exports = {
   patchText,
   restoreInPlace,
   restoreLatest,
+  reverseUnmarkedClientSand,
   sha256,
+  uninstallAllPatches,
   vscodeChecksum
 };
