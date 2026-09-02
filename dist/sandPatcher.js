@@ -165,6 +165,7 @@ function emptyStreamTotals() {
     actionRoute: 0,
     resumeMode: 0,
     completionWake: 0,
+    pushContextTimeout: 0,
     legacy: 0
   };
 }
@@ -224,6 +225,7 @@ const LEFTOVER_MARKERS = [
   'SAND_MANAGED_ACTION_ROUTE_V1',
   'SAND_SUBAGENT_RESUME_AGENT_MODE_V1',
   'SAND_SUBAGENT_COMPLETION_WAKE_V1',
+  'SAND_PUSH_CONTEXT_TIMEOUT_V1',
   'KC_SAND_CLIENT_V1',
   'KC_SAND_ELIGIBILITY_V1'
 ];
@@ -294,6 +296,37 @@ function pathsFromRels(appRoot, rels) {
 
 function applyCandidatePaths(appRoot) {
   return pathsFromRels(appRoot, CANDIDATE_FILES);
+}
+
+// 用即将写入的补丁结果（changes 里的 patched，其余文件用磁盘原文）合出整棵树的 stream 标记总数，
+// 供“写入前预检”判断生命周期补丁是否全部命中——不落盘。
+function leftoverPushContextTimeout(appRoot, changes) {
+  const byRel = new Map(changes.map((change) => [change.rel, change.patched]));
+  let left = 0;
+  for (const { rel, abs } of applyCandidatePaths(appRoot)) {
+    const buf = byRel.has(rel) ? byRel.get(rel) : fs.readFileSync(abs);
+    left += sandStream.countUnpatchedPushContextTimeout(buf.toString('utf8'));
+  }
+  return left;
+}
+
+function projectStreamTotals(appRoot, changes) {
+  const byRel = new Map(changes.map((change) => [change.rel, change.patched]));
+  let totals = emptyStreamTotals();
+  for (const { rel, abs } of applyCandidatePaths(appRoot)) {
+    const buf = byRel.has(rel) ? byRel.get(rel) : fs.readFileSync(abs);
+    totals = addStreamTotals(totals, sandStream.detectSand(buf.toString('utf8')));
+  }
+  return totals;
+}
+
+function shortfallMessage(shortfall, version) {
+  const detail = shortfall.map((item) => `${item.key} ${item.have}/${item.want}`).join('，');
+  return (
+    `Sand Stream 补丁未完整命中，已中止写入（缺：${detail}）。` +
+    `当前 Cursor ${version} 可能与补丁规则不完全匹配，或此前被旧版本部分改写。` +
+    `请先「一键卸载」还原，完整退出并重开 Cursor 后再重新「一键注入」；若仍失败请把这条 Cursor 版本号反馈给作者。`
+  );
 }
 
 function scanCandidatePaths(appRoot) {
@@ -478,6 +511,24 @@ function applyPatchLocked({ appRoot, stateRoot, dryRun = false }) {
     );
   }
 
+  // 写入前预检：只要这次开始打 Stream 生命周期补丁，就必须整套齐全。
+  // 缺任何一条（比如 657.js 的 action 路由没命中）都会让后台/子代理回退到服务器、
+  // 对 Bot 账号报“模型不支持”并弹“无法恢复”。宁可整体拒绝，也不写半套。
+  const projected = projectStreamTotals(root, changes);
+  if (sandStream.lifecycleAttempted(projected)) {
+    const shortfall = sandStream.lifecycleShortfall(projected);
+    if (shortfall.length) {
+      throw new Error(shortfallMessage(shortfall, before.version));
+    }
+  }
+  const leftoverTimeout = leftoverPushContextTimeout(root, changes);
+  if (leftoverTimeout > 0) {
+    throw new Error(
+      `push_req_context 仍剩 ${leftoverTimeout} 处 10s 超时未改写，已中止写入。` +
+        `当前 Cursor ${before.version} 的压缩名可能变了；请先「一键卸载」再反馈版本号。`
+    );
+  }
+
   const replacementCount = changes.reduce((sum, change) => sum + change.replacements, 0);
   includeExtensionHashChanges(root, changes);
   const product = readProduct(root);
@@ -562,7 +613,15 @@ function applyPatchLocked({ appRoot, stateRoot, dryRun = false }) {
   }
 
   const after = inspect(root);
-  if (!after.patched && !after.streamPartial) {
+  if (leftoverPushContextTimeout(root, []) > 0) {
+    throw new Error(`写入后校验失败：push_req_context 仍有未改写的 10s 超时（Cursor ${after.version}）。`);
+  }
+  if (sandStream.lifecycleAttempted(after.totals.stream)) {
+    const shortfall = sandStream.lifecycleShortfall(after.totals.stream);
+    if (shortfall.length) {
+      throw new Error(`写入后校验失败：${shortfallMessage(shortfall, after.version)}`);
+    }
+  } else if (!after.patched && !after.streamPartial) {
     throw new Error('Patch write completed but post-write verification failed. Use restore before retrying.');
   }
   return {

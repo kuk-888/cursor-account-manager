@@ -15,28 +15,34 @@ const fixture =
   'isGenerateImageModelRestricted:!1,taskToolProps:void 0},resolvers:' +
   'clientIdentity:{clientType:"ide"}' +
   'function hre(e){return t=>{return n=this,o=void 0,s=function*(){' +
-  'this._agentHostEnabled=gate,';
+  'this._agentHostEnabled=gate,' +
+  '$4i="[push_req_context]",Ykd=1e4';
 
 const applied = sand.applySandPatches(fixture);
 const d = sand.detectSand(applied.content);
-assert.ok(sand.streamLifecycleInstalled(d), JSON.stringify(d, null, 2));
-assert.strictEqual(d.subagentRoute, 1);
-assert.strictEqual(d.subagentSession, 1);
-assert.strictEqual(d.taskTool, 1);
-assert.strictEqual(d.actionRoute, 1);
-assert.strictEqual(d.resumeMode, 1);
-assert.strictEqual(d.completionWake, 2);
-assert.strictEqual(d.legacyTaskTool, 0);
+assert.ok(sand.streamModeInstalled(d), JSON.stringify(d, null, 2));
+assert.ok(!sand.CLIENT_SUBAGENT_ENABLED, 'default must be slim');
+assert.ok(!sand.streamLifecycleInstalled(d), 'slim must skip full lifecycle');
+assert.strictEqual(d.subagentRoute, 0);
+assert.strictEqual(d.subagentSession, 0);
+assert.strictEqual(d.taskTool, 0);
+assert.strictEqual(d.actionRoute, 0);
+assert.strictEqual(d.resumeMode, 0);
+assert.strictEqual(d.completionWake, 0);
+assert.strictEqual(d.pushContextTimeout, 1);
+assert.ok(applied.content.includes('Ykd=200/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/'));
+const from500 = sand.applySandPatches(
+  fixture.replace('Ykd=1e4', 'Ykd=500/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/')
+);
+assert.ok(from500.content.includes('Ykd=200/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/'));
+assert.ok(!from500.content.includes('Ykd=500/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/'));
 
 const removed = sand.removeSandPatches(applied.content);
 assert.strictEqual(removed.content, fixture, 'apply/remove should be reversible');
 
 const v125 = sand.managedTaskToolPatchedV125();
-const migrated = sand.applySandPatches(v125);
-assert.ok(migrated.content.includes('/*SAND_MANAGED_TASK_TOOL_V2*/'));
-assert.ok(!migrated.content.includes('/*SAND_MANAGED_TASK_TOOL_V1*/'));
-const unmigrated = sand.removeSandPatches(migrated.content);
+const unmigrated = sand.removeSandPatches(v125);
 assert.ok(unmigrated.content.includes('taskToolProps:void 0},resolvers:'));
 assert.ok(!unmigrated.content.includes('SAND_MANAGED_TASK_TOOL'));
 
-console.log('sand stream 1.2.6 lifecycle patches ok');
+console.log('sand stream slim core + timeout patches ok');
