@@ -1,4 +1,4 @@
-// Sand Stream 补丁（对齐 sand_stream_installer 1.2.3 / Cursor 3.18.9）
+// Sand Stream 补丁（对齐 sand_stream_installer 1.2.6-subagent-lifecycle-fixed / Cursor 3.18.9）
 // 注入与卸载都走同一套标记，兼容该脚本装过的客户端。
 const crypto = require("crypto");
 const path = require("path");
@@ -12,6 +12,13 @@ const SAND_AGENT_HOST_ENABLEMENT_MARKER = "/*SAND_AGENT_HOST_ENABLEMENT_V1*/";
 const SAND_LOCAL_RUNTIME_LOAD_MARKER = "/*SAND_LOCAL_RUNTIME_LOAD_V1*/";
 const SAND_AGENT_HOST_MOVE_EXEC_MARKER = "/*SAND_AGENT_HOST_MOVE_EXEC_V1*/";
 const SAND_AGENT_HOST_IDENTITY_MARKER = "/*SAND_AGENT_HOST_IDENTITY_V1*/";
+const SAND_MANAGED_SUBAGENT_ROUTE_MARKER = "/*SAND_MANAGED_SUBAGENT_ROUTE_V1*/";
+const SAND_MANAGED_SUBAGENT_SESSION_MARKER = "/*SAND_MANAGED_SUBAGENT_SESSION_V1*/";
+const SAND_MANAGED_TASK_TOOL_MARKER = "/*SAND_MANAGED_TASK_TOOL_V2*/";
+const LEGACY_SAND_MANAGED_TASK_TOOL_MARKER = "/*SAND_MANAGED_TASK_TOOL_V1*/";
+const SAND_MANAGED_ACTION_ROUTE_MARKER = "/*SAND_MANAGED_ACTION_ROUTE_V1*/";
+const SAND_SUBAGENT_RESUME_MODE_MARKER = "/*SAND_SUBAGENT_RESUME_AGENT_MODE_V1*/";
+const SAND_SUBAGENT_COMPLETION_WAKE_MARKER = "/*SAND_SUBAGENT_COMPLETION_WAKE_V1*/";
 const LEGACY_SAND_CLIENT_MARKER = "/*KC_SAND_CLIENT_V1*/";
 const LEGACY_SAND_ELIGIBILITY_MARKER = "/*KC_SAND_ELIGIBILITY_V1*/";
 
@@ -60,6 +67,72 @@ const AGENT_HOST_IDENTITY_ORIGINAL = 'clientIdentity:{clientType:"ide"}';
 const AGENT_HOST_IDENTITY_PATCHED =
   'clientIdentity:{clientType:"sand"' + SAND_AGENT_HOST_IDENTITY_MARKER + "}";
 
+const MANAGED_SUBAGENT_ROUTE_ORIGINAL =
+  "hasUnsupportedRunOptions:void 0!==e.runOptions.customSystemPrompt||" +
+  "void 0!==e.runOptions.harness||" +
+  "!0===e.runOptions.excludeWorkspaceContext||" +
+  "void 0!==e.runOptions.subagentTypeName||" +
+  "void 0!==e.runOptions.parentAgentToolCallId||" +
+  "!0===e.runOptions.directMetaParentChildSubagent";
+const MANAGED_SUBAGENT_ROUTE_PATCHED =
+  "hasUnsupportedRunOptions:void 0!==e.runOptions.customSystemPrompt||" +
+  "void 0!==e.runOptions.harness||" +
+  "!0===e.runOptions.excludeWorkspaceContext" +
+  SAND_MANAGED_SUBAGENT_ROUTE_MARKER +
+  "||!0===e.runOptions.directMetaParentChildSubagent";
+
+const MANAGED_ACTION_ROUTE_ORIGINAL =
+  'return"userMessageAction"!==e.actionCase?"action-not-supported":' +
+  "e.requestedMode!==oe.xyI.AGENT?\"mode-not-supported\":" +
+  'e.simulatedUserMessage?"simulated-message-not-supported":' +
+  'void 0===e.modelId?"model-not-supported":' +
+  'e.hasModelCredentials?"private-model-not-supported":' +
+  'e.hasUnsupportedRunOptions?"run-options-not-supported":void 0';
+const MANAGED_ACTION_ROUTE_PATCHED =
+  "return" +
+  SAND_MANAGED_ACTION_ROUTE_MARKER +
+  '!["userMessageAction","summarizeAction","resumeAction",' +
+  '"backgroundTaskCompletionAction"].includes(e.actionCase)?' +
+  '"action-not-supported":' +
+  '"userMessageAction"===e.actionCase&&' +
+  'e.requestedMode!==oe.xyI.AGENT?"mode-not-supported":' +
+  '"userMessageAction"===e.actionCase&&' +
+  'e.simulatedUserMessage?"simulated-message-not-supported":' +
+  'void 0===e.modelId?"model-not-supported":' +
+  'e.hasModelCredentials?"private-model-not-supported":' +
+  'e.hasUnsupportedRunOptions?"run-options-not-supported":void 0';
+
+const SUBAGENT_RESUME_MODE_ORIGINAL =
+  "e.resumeAgentId&&e.mode===Mn.FL.UNSPECIFIED&&!e.readonly?" +
+  "oe.xyI.UNSPECIFIED:";
+const SUBAGENT_RESUME_MODE_PATCHED =
+  "e.resumeAgentId&&e.mode===Mn.FL.UNSPECIFIED&&!e.readonly?" +
+  SAND_SUBAGENT_RESUME_MODE_MARKER +
+  "oe.xyI.AGENT:";
+
+const SUBAGENT_COMPLETION_WAKE_RE =
+  /([A-Za-z_$][A-Za-z0-9_$]*)\.source==="interactive-child"\|\|\1\.payload\.notificationContext==="user_driven_interactive_child"/g;
+const SUBAGENT_COMPLETION_WAKE_PATCH_RE = new RegExp(
+  "([A-Za-z_$][A-Za-z0-9_$]*)\\.source===\"subagent\"" +
+    SAND_SUBAGENT_COMPLETION_WAKE_MARKER.replace(/[/*]/g, "\\$&") +
+    "\\|\\|\\1\\.source===\"interactive-child\"\\|\\|\\1\\.payload\\.notificationContext===\"user_driven_interactive_child\"",
+  "g"
+);
+
+const MANAGED_SUBAGENT_SESSION_ORIGINAL =
+  "const Cre={enableEmptyResponseRetry:!0,enableGrepBroadGlobGuard:!0," +
+  "enableReadToolNegativeOffset:!0,enableSandboxSharedBuildCache:!0," +
+  "nalLoopDetection:!0};";
+const MANAGED_SUBAGENT_SESSION_PATCHED =
+  "const Cre={enableEmptyResponseRetry:!0,enableGrepBroadGlobGuard:!0," +
+  "enableReadToolNegativeOffset:!0,enableSandboxSharedBuildCache:!0," +
+  "nalLoopDetection:!0,useClientSideSubagent:!0" +
+  SAND_MANAGED_SUBAGENT_SESSION_MARKER +
+  "};";
+
+const MANAGED_TASK_TOOL_ORIGINAL =
+  "isGenerateImageModelRestricted:!1,taskToolProps:void 0},resolvers:";
+
 const DIRECT_STREAM_ANCHOR =
   "function hre(e){return t=>{return n=this,o=void 0,s=function*(){";
 
@@ -86,6 +159,13 @@ function emptyStats() {
     direct_stream: 0,
     agent_host_enablement: 0,
     agent_host_identity: 0,
+    managed_subagent_route: 0,
+    managed_subagent_session: 0,
+    managed_task_tool: 0,
+    migrated_task_tool: 0,
+    managed_action_route: 0,
+    subagent_resume_mode: 0,
+    subagent_completion_wake: 0,
   };
 }
 
@@ -102,7 +182,64 @@ function sumStats(s) {
     s.agent_host_move_exec +
     s.direct_stream +
     s.agent_host_enablement +
-    s.agent_host_identity
+    s.agent_host_identity +
+    s.managed_subagent_route +
+    s.managed_subagent_session +
+    s.managed_task_tool +
+    s.migrated_task_tool +
+    s.managed_action_route +
+    s.subagent_resume_mode +
+    s.subagent_completion_wake
+  );
+}
+
+function managedTaskToolProps(customSubagentNormalizer, marker, modelCatalog) {
+  return (
+    "{" +
+    marker +
+    "parentRequestedModelName:i," +
+    "parentModelParameters:e.requestedModel.parameters," +
+    "parentMaxMode:l," +
+    "isModelBlocked:()=>!1," +
+    "isModelValid:e=>e===i," +
+    "requiresMaxMode:()=>!1," +
+    "compareModelCosts:()=>0," +
+    'subagentModelForcePolicy:"none",' +
+    "requireServerSideSubagent:!1," +
+    "subagentModels:{modelsBySlug:" +
+    modelCatalog +
+    "}," +
+    "normalizeCustomSubagents:" +
+    customSubagentNormalizer +
+    "," +
+    "getTaskToolConfig:async()=>({})" +
+    "}"
+  );
+}
+
+function managedTaskToolPatched() {
+  return (
+    "isGenerateImageModelRestricted:!1,taskToolProps:" +
+    "void 0!==e.runOptions.subagentTypeName?void 0:" +
+    managedTaskToolProps("()=>[]", SAND_MANAGED_TASK_TOOL_MARKER, "new Map([[i,{slug:i}]])") +
+    "},resolvers:"
+  );
+}
+
+function managedTaskToolPatchedV124() {
+  return (
+    "isGenerateImageModelRestricted:!1,taskToolProps:" +
+    managedTaskToolProps("e=>e", LEGACY_SAND_MANAGED_TASK_TOOL_MARKER, "new Map") +
+    "},resolvers:"
+  );
+}
+
+function managedTaskToolPatchedV125() {
+  return (
+    "isGenerateImageModelRestricted:!1,taskToolProps:" +
+    "void 0!==e.runOptions.subagentTypeName?void 0:" +
+    managedTaskToolProps("()=>[]", LEGACY_SAND_MANAGED_TASK_TOOL_MARKER, "new Map") +
+    "},resolvers:"
   );
 }
 
@@ -229,6 +366,57 @@ function applySandPatches(content) {
     stats.agent_host_move_exec += moveExecCount;
   }
 
+  const subagentRouteCount = next.split(MANAGED_SUBAGENT_ROUTE_ORIGINAL).length - 1;
+  if (subagentRouteCount) {
+    next = next.split(MANAGED_SUBAGENT_ROUTE_ORIGINAL).join(MANAGED_SUBAGENT_ROUTE_PATCHED);
+    stats.managed_subagent_route += subagentRouteCount;
+  }
+
+  const actionRouteCount = next.split(MANAGED_ACTION_ROUTE_ORIGINAL).length - 1;
+  if (actionRouteCount) {
+    next = next.split(MANAGED_ACTION_ROUTE_ORIGINAL).join(MANAGED_ACTION_ROUTE_PATCHED);
+    stats.managed_action_route += actionRouteCount;
+  }
+
+  const resumeModeCount = next.split(SUBAGENT_RESUME_MODE_ORIGINAL).length - 1;
+  if (resumeModeCount) {
+    next = next.split(SUBAGENT_RESUME_MODE_ORIGINAL).join(SUBAGENT_RESUME_MODE_PATCHED);
+    stats.subagent_resume_mode += resumeModeCount;
+  }
+
+  if (!next.includes(SAND_SUBAGENT_COMPLETION_WAKE_MARKER)) {
+    next = next.replace(SUBAGENT_COMPLETION_WAKE_RE, (full, variable) => {
+      stats.subagent_completion_wake += 1;
+      return (
+        variable +
+        '.source==="subagent"' +
+        SAND_SUBAGENT_COMPLETION_WAKE_MARKER +
+        "||" +
+        full
+      );
+    });
+  }
+
+  const subagentSessionCount = next.split(MANAGED_SUBAGENT_SESSION_ORIGINAL).length - 1;
+  if (subagentSessionCount) {
+    next = next.split(MANAGED_SUBAGENT_SESSION_ORIGINAL).join(MANAGED_SUBAGENT_SESSION_PATCHED);
+    stats.managed_subagent_session += subagentSessionCount;
+  }
+
+  for (const previous of [managedTaskToolPatchedV125(), managedTaskToolPatchedV124()]) {
+    const migrated = next.split(previous).length - 1;
+    if (migrated) {
+      next = next.split(previous).join(managedTaskToolPatched());
+      stats.migrated_task_tool += migrated;
+    }
+  }
+
+  const taskToolCount = next.split(MANAGED_TASK_TOOL_ORIGINAL).length - 1;
+  if (taskToolCount) {
+    next = next.split(MANAGED_TASK_TOOL_ORIGINAL).join(managedTaskToolPatched());
+    stats.managed_task_tool += taskToolCount;
+  }
+
   const identityCount = next.split(AGENT_HOST_IDENTITY_ORIGINAL).length - 1;
   if (identityCount) {
     next = next.split(AGENT_HOST_IDENTITY_ORIGINAL).join(AGENT_HOST_IDENTITY_PATCHED);
@@ -303,6 +491,54 @@ function removeSandPatches(content) {
     stats.agent_host_move_exec += moveExecCount;
   }
 
+  const subagentRouteCount = next.split(MANAGED_SUBAGENT_ROUTE_PATCHED).length - 1;
+  if (subagentRouteCount) {
+    next = next.split(MANAGED_SUBAGENT_ROUTE_PATCHED).join(MANAGED_SUBAGENT_ROUTE_ORIGINAL);
+    stats.managed_subagent_route += subagentRouteCount;
+  }
+
+  const actionRouteCount = next.split(MANAGED_ACTION_ROUTE_PATCHED).length - 1;
+  if (actionRouteCount) {
+    next = next.split(MANAGED_ACTION_ROUTE_PATCHED).join(MANAGED_ACTION_ROUTE_ORIGINAL);
+    stats.managed_action_route += actionRouteCount;
+  }
+
+  const resumeModeCount = next.split(SUBAGENT_RESUME_MODE_PATCHED).length - 1;
+  if (resumeModeCount) {
+    next = next.split(SUBAGENT_RESUME_MODE_PATCHED).join(SUBAGENT_RESUME_MODE_ORIGINAL);
+    stats.subagent_resume_mode += resumeModeCount;
+  }
+
+  next = next.replace(SUBAGENT_COMPLETION_WAKE_PATCH_RE, (full, variable) => {
+    stats.subagent_completion_wake += 1;
+    return (
+      variable +
+      '.source==="interactive-child"||' +
+      variable +
+      '.payload.notificationContext==="user_driven_interactive_child"'
+    );
+  });
+
+  const taskV2 = managedTaskToolPatched();
+  const taskV2Count = next.split(taskV2).length - 1;
+  if (taskV2Count) {
+    next = next.split(taskV2).join(MANAGED_TASK_TOOL_ORIGINAL);
+    stats.managed_task_tool += taskV2Count;
+  }
+  for (const previous of [managedTaskToolPatchedV125(), managedTaskToolPatchedV124()]) {
+    const previousCount = next.split(previous).length - 1;
+    if (previousCount) {
+      next = next.split(previous).join(MANAGED_TASK_TOOL_ORIGINAL);
+      stats.managed_task_tool += previousCount;
+    }
+  }
+
+  const subagentSessionCount = next.split(MANAGED_SUBAGENT_SESSION_PATCHED).length - 1;
+  if (subagentSessionCount) {
+    next = next.split(MANAGED_SUBAGENT_SESSION_PATCHED).join(MANAGED_SUBAGENT_SESSION_ORIGINAL);
+    stats.managed_subagent_session += subagentSessionCount;
+  }
+
   const identityCount = next.split(AGENT_HOST_IDENTITY_PATCHED).length - 1;
   if (identityCount) {
     next = next.split(AGENT_HOST_IDENTITY_PATCHED).join(AGENT_HOST_IDENTITY_ORIGINAL);
@@ -334,6 +570,13 @@ function detectSand(content) {
     directStream: content.split(SAND_DIRECT_STREAM_MARKER).length - 1,
     agentHost: content.split(SAND_AGENT_HOST_ENABLEMENT_MARKER).length - 1,
     identity: content.split(SAND_AGENT_HOST_IDENTITY_MARKER).length - 1,
+    subagentRoute: content.split(SAND_MANAGED_SUBAGENT_ROUTE_MARKER).length - 1,
+    subagentSession: content.split(SAND_MANAGED_SUBAGENT_SESSION_MARKER).length - 1,
+    taskTool: content.split(SAND_MANAGED_TASK_TOOL_MARKER).length - 1,
+    legacyTaskTool: content.split(LEGACY_SAND_MANAGED_TASK_TOOL_MARKER).length - 1,
+    actionRoute: content.split(SAND_MANAGED_ACTION_ROUTE_MARKER).length - 1,
+    resumeMode: content.split(SAND_SUBAGENT_RESUME_MODE_MARKER).length - 1,
+    completionWake: content.split(SAND_SUBAGENT_COMPLETION_WAKE_MARKER).length - 1,
     legacy:
       (content.split(LEGACY_SAND_CLIENT_MARKER).length - 1) +
       (content.split(LEGACY_SAND_ELIGIBILITY_MARKER).length - 1),
@@ -351,6 +594,13 @@ function hasSandMarkers(content) {
       d.directStream +
       d.agentHost +
       d.identity +
+      d.subagentRoute +
+      d.subagentSession +
+      d.taskTool +
+      d.legacyTaskTool +
+      d.actionRoute +
+      d.resumeMode +
+      d.completionWake +
       d.legacy >
     0
   );
@@ -364,6 +614,19 @@ function streamModeInstalled(d) {
     d.directStream > 0 &&
     d.agentHost > 0 &&
     d.identity > 0
+  );
+}
+
+function streamLifecycleInstalled(d) {
+  return (
+    streamModeInstalled(d) &&
+    d.subagentRoute > 0 &&
+    d.subagentSession > 0 &&
+    d.taskTool > 0 &&
+    !d.legacyTaskTool &&
+    d.actionRoute > 0 &&
+    d.resumeMode > 0 &&
+    d.completionWake > 0
   );
 }
 
@@ -427,10 +690,14 @@ module.exports = {
   detectSand,
   hasSandMarkers,
   streamModeInstalled,
+  streamLifecycleInstalled,
   sumStats,
   addStats,
   emptyStats,
   productChecksum,
   updateExtensionHashes,
   syncProductChecksums,
+  managedTaskToolPatched,
+  managedTaskToolPatchedV124,
+  managedTaskToolPatchedV125,
 };

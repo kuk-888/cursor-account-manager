@@ -2851,6 +2851,7 @@ function sandStatusForClient() {
             sand: (s.totals && s.totals.sandAssignments) || 0,
             unpatched: (s.totals && s.totals.unpatchedAssignments) || 0,
             streamMode: !!s.streamMode,
+            streamLifecycle: !!s.streamLifecycle,
             streamPartial: !!s.streamPartial,
             error: '',
             auto: sandAutoPatchEnabled()
@@ -2873,7 +2874,9 @@ function refreshSandStatusBar() {
     }
     else if (s.patched) {
         sandStatusBar.text = '$(check) Sand 已注入';
-        sandStatusBar.tooltip = s.streamMode
+        sandStatusBar.tooltip = s.streamLifecycle
+            ? 'Sand Stream + Task/子代理已齐 · 请求头 sand\n点击打开账号管理'
+            : s.streamMode
             ? 'Sand Stream 已齐 · 请求头 sand\n点击打开账号管理'
             : 'x-cursor-client-type = sand\n点击打开账号管理';
     }
