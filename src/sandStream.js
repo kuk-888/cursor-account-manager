@@ -3,6 +3,18 @@
 const crypto = require("crypto");
 const path = require("path");
 
+// 默认精简：只打核心 Bot 路由+直连流+push_req_context 超时，不注入子代理/Task/resume/后台唤醒。
+// 打包脚本在 CAM_WITH_SUBAGENT=1 时会把它改成 true，产出完整生命周期对照版。
+const CLIENT_SUBAGENT_ENABLED = false;
+const SUBAGENT_LIFECYCLE_KEYS = [
+  "subagentRoute",
+  "subagentSession",
+  "taskTool",
+  "actionRoute",
+  "resumeMode",
+  "completionWake"
+];
+
 const SAND_CLIENT_MARKER = "/*SAND_CLIENT_MODE_V1*/";
 const SAND_CLIENT_EXISTING_MARKER = "/*SAND_CLIENT_EXISTING_V1*/";
 const SAND_ELIGIBILITY_MARKER = "/*SAND_ELIGIBILITY_MODE_V1*/";
@@ -19,6 +31,7 @@ const LEGACY_SAND_MANAGED_TASK_TOOL_MARKER = "/*SAND_MANAGED_TASK_TOOL_V1*/";
 const SAND_MANAGED_ACTION_ROUTE_MARKER = "/*SAND_MANAGED_ACTION_ROUTE_V1*/";
 const SAND_SUBAGENT_RESUME_MODE_MARKER = "/*SAND_SUBAGENT_RESUME_AGENT_MODE_V1*/";
 const SAND_SUBAGENT_COMPLETION_WAKE_MARKER = "/*SAND_SUBAGENT_COMPLETION_WAKE_V1*/";
+const SAND_PUSH_CONTEXT_TIMEOUT_MARKER = "/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/";
 const LEGACY_SAND_CLIENT_MARKER = "/*KC_SAND_CLIENT_V1*/";
 const LEGACY_SAND_ELIGIBILITY_MARKER = "/*KC_SAND_ELIGIBILITY_V1*/";
 
@@ -136,6 +149,39 @@ const MANAGED_TASK_TOOL_ORIGINAL =
 const DIRECT_STREAM_ANCHOR =
   "function hre(e){return t=>{return n=this,o=void 0,s=function*(){";
 
+// push_req_context 超时：缓存未命中时 getPushedRulesProto 最多等 1e4ms（10s），
+// 走 Bot 时常等满。改成 200ms。标识符随压缩名变（3.18.9=Ykd/v$p，3.18.25=yCd/pWp），只锁字段形状。
+const PUSH_CONTEXT_TIMEOUT_MS = 200;
+const PUSH_CONTEXT_TIMEOUT_ORIGINAL_RE =
+  /("\[push_req_context\]",)([A-Za-z_$][\w$]*)=1e4/g;
+const PUSH_CONTEXT_TIMEOUT_PATCHED_RE = new RegExp(
+  '("\\[push_req_context\\]",)([A-Za-z_$][\\w$]*)=(?:200|500)' +
+    SAND_PUSH_CONTEXT_TIMEOUT_MARKER.replace(/[/*]/g, "\\$&"),
+  "g"
+);
+
+function countUnpatchedPushContextTimeout(content) {
+  return (content.match(/("\[push_req_context\]",)([A-Za-z_$][\w$]*)=1e4/g) || []).length;
+}
+
+function applyPushContextTimeout(content, stats) {
+  return content.replace(PUSH_CONTEXT_TIMEOUT_PATCHED_RE, (full, prefix, ident) => {
+    const next = prefix + ident + "=" + PUSH_CONTEXT_TIMEOUT_MS + SAND_PUSH_CONTEXT_TIMEOUT_MARKER;
+    if (next !== full) stats.push_context_timeout += 1;
+    return next;
+  }).replace(PUSH_CONTEXT_TIMEOUT_ORIGINAL_RE, (full, prefix, ident) => {
+    stats.push_context_timeout += 1;
+    return prefix + ident + "=" + PUSH_CONTEXT_TIMEOUT_MS + SAND_PUSH_CONTEXT_TIMEOUT_MARKER;
+  });
+}
+
+function removePushContextTimeout(content, stats) {
+  return content.replace(PUSH_CONTEXT_TIMEOUT_PATCHED_RE, (full, prefix, ident) => {
+    stats.push_context_timeout += 1;
+    return prefix + ident + "=1e4";
+  });
+}
+
 const AGENT_HOST_ENABLEMENT_RE = /(this\._agentHostEnabled=)([A-Za-z_$][A-Za-z0-9_$]*)(,)/;
 const AGENT_HOST_ENABLEMENT_PATCH_RE = new RegExp(
   "([A-Za-z_$][A-Za-z0-9_$]*)=!0;" +
@@ -166,6 +212,7 @@ function emptyStats() {
     managed_action_route: 0,
     subagent_resume_mode: 0,
     subagent_completion_wake: 0,
+    push_context_timeout: 0,
   };
 }
 
@@ -189,7 +236,8 @@ function sumStats(s) {
     s.migrated_task_tool +
     s.managed_action_route +
     s.subagent_resume_mode +
-    s.subagent_completion_wake
+    s.subagent_completion_wake +
+    s.push_context_timeout
   );
 }
 
@@ -281,7 +329,8 @@ function directStreamInjection() {
     'isCodexFamily:i.includes("codex"),isGpt5Family:i.includes("gpt-5")};' +
     "return{promptSession:s,promptToolSession:p,attempt:{resolvedModel:cre(n)," +
     "supportsSelfSummary:!1,routedModelDisplayName:o," +
-    "resolvedModelMetadata:nre(a,o),finish:()=>Promise.resolve()}}}"
+    "resolvedModelMetadata:nre(a,o)," +
+    "finish:()=>Promise.resolve()}}}"
   );
 }
 
@@ -366,6 +415,7 @@ function applySandPatches(content) {
     stats.agent_host_move_exec += moveExecCount;
   }
 
+  if (CLIENT_SUBAGENT_ENABLED) {
   const subagentRouteCount = next.split(MANAGED_SUBAGENT_ROUTE_ORIGINAL).length - 1;
   if (subagentRouteCount) {
     next = next.split(MANAGED_SUBAGENT_ROUTE_ORIGINAL).join(MANAGED_SUBAGENT_ROUTE_PATCHED);
@@ -416,6 +466,7 @@ function applySandPatches(content) {
     next = next.split(MANAGED_TASK_TOOL_ORIGINAL).join(managedTaskToolPatched());
     stats.managed_task_tool += taskToolCount;
   }
+  }
 
   const identityCount = next.split(AGENT_HOST_IDENTITY_ORIGINAL).length - 1;
   if (identityCount) {
@@ -423,9 +474,8 @@ function applySandPatches(content) {
     stats.agent_host_identity += identityCount;
   }
 
-  const injection = directStreamInjection();
   if (!next.includes(SAND_DIRECT_STREAM_MARKER) && next.includes(DIRECT_STREAM_ANCHOR)) {
-    next = next.replace(DIRECT_STREAM_ANCHOR, DIRECT_STREAM_ANCHOR + injection);
+    next = next.replace(DIRECT_STREAM_ANCHOR, DIRECT_STREAM_ANCHOR + directStreamInjection());
     stats.direct_stream += 1;
   }
 
@@ -435,6 +485,8 @@ function applySandPatches(content) {
       return variable + "=!0;" + SAND_AGENT_HOST_ENABLEMENT_MARKER + left + variable + comma;
     });
   }
+
+  next = applyPushContextTimeout(next, stats);
 
   return { content: next, stats };
 }
@@ -557,6 +609,8 @@ function removeSandPatches(content) {
     return left + variable + comma;
   });
 
+  next = removePushContextTimeout(next, stats);
+
   return { content: next, stats };
 }
 
@@ -577,6 +631,7 @@ function detectSand(content) {
     actionRoute: content.split(SAND_MANAGED_ACTION_ROUTE_MARKER).length - 1,
     resumeMode: content.split(SAND_SUBAGENT_RESUME_MODE_MARKER).length - 1,
     completionWake: content.split(SAND_SUBAGENT_COMPLETION_WAKE_MARKER).length - 1,
+    pushContextTimeout: content.split(SAND_PUSH_CONTEXT_TIMEOUT_MARKER).length - 1,
     legacy:
       (content.split(LEGACY_SAND_CLIENT_MARKER).length - 1) +
       (content.split(LEGACY_SAND_ELIGIBILITY_MARKER).length - 1),
@@ -601,6 +656,7 @@ function hasSandMarkers(content) {
       d.actionRoute +
       d.resumeMode +
       d.completionWake +
+      d.pushContextTimeout +
       d.legacy >
     0
   );
@@ -628,6 +684,53 @@ function streamLifecycleInstalled(d) {
     d.resumeMode > 0 &&
     d.completionWake > 0
   );
+}
+
+// 一次完整注入在 3.18.9 上每个生命周期补丁应命中的次数（与 sand_stream_installer 1.2.6 的
+// 安装后校验一致：单点补丁各 1，agentHost/completionWake 在 desktop+glass 两个 workbench 各 1 = 2）。
+// 用它做“注入前预检”：只要开始打 stream，就必须全部齐，缺哪条直接拒绝写入，绝不半补丁。
+const EXPECTED_LIFECYCLE = {
+  managedLocal: 1,
+  runtimeLoad: 1,
+  moveExec: 1,
+  directStream: 1,
+  agentHost: 2,
+  identity: 1,
+  subagentRoute: 1,
+  subagentSession: 1,
+  taskTool: 1,
+  actionRoute: 1,
+  resumeMode: 1,
+  completionWake: 2
+};
+
+function lifecycleAttempted(d) {
+  // 核心 Bot 路由标记在两种模式下都会有；子代理关掉时不看子代理那几项。
+  return (
+    (d.managedLocal || 0) +
+      (d.runtimeLoad || 0) +
+      (d.moveExec || 0) +
+      (d.directStream || 0) +
+      (d.agentHost || 0) +
+      (d.identity || 0) >
+    0
+  );
+}
+
+// 返回没达标的生命周期补丁列表；每项 {key, have, want}。空数组表示齐了。
+// 关掉客户端子代理时（CLIENT_SUBAGENT_ENABLED=false），不要求那 6 项子代理补丁。
+function lifecycleShortfall(d) {
+  const out = [];
+  for (const key of Object.keys(EXPECTED_LIFECYCLE)) {
+    if (!CLIENT_SUBAGENT_ENABLED && SUBAGENT_LIFECYCLE_KEYS.includes(key)) continue;
+    const have = d[key] || 0;
+    const want = EXPECTED_LIFECYCLE[key];
+    if (have < want) out.push({ key, have, want });
+  }
+  if (CLIENT_SUBAGENT_ENABLED && (d.legacyTaskTool || 0) > 0) {
+    out.push({ key: 'legacyTaskTool', have: d.legacyTaskTool, want: 0 });
+  }
+  return out;
 }
 
 function productChecksum(buf) {
@@ -691,6 +794,10 @@ module.exports = {
   hasSandMarkers,
   streamModeInstalled,
   streamLifecycleInstalled,
+  EXPECTED_LIFECYCLE,
+  CLIENT_SUBAGENT_ENABLED,
+  lifecycleAttempted,
+  lifecycleShortfall,
   sumStats,
   addStats,
   emptyStats,
@@ -700,4 +807,6 @@ module.exports = {
   managedTaskToolPatched,
   managedTaskToolPatchedV124,
   managedTaskToolPatchedV125,
+  countUnpatchedPushContextTimeout,
+  SAND_PUSH_CONTEXT_TIMEOUT_MARKER,
 };

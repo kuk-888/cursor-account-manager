@@ -101,16 +101,21 @@ if (!fs.existsSync(path.join(UNPACK, 'product.json'))) {
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cam-release-uninstall-'));
 extractTag('v2.1.0', path.join(tmp, 'v210'));
 extractTag('v2.3.1', path.join(tmp, 'v231'));
+extractTag('v2.3.2', path.join(tmp, 'v232'));
 
 const v210 = require(path.join(tmp, 'v210', 'sandPatcher.js'));
 const v231Dir = path.join(tmp, 'v231');
+const v232Dir = path.join(tmp, 'v232');
 
 const results = {
   v210: runFamily('v2.1.0 header', v210.CANDIDATE_FILES, (text) => applyLegacyHeader(v210, text)),
   v231: runFamily('v2.3.1 stream+header', require(path.join(v231Dir, 'sandStream.js')).TARGET_SPECS.map((s) => s.rel), (text) =>
     applyReleasedStream(v231Dir, text)
   ),
-  current: runFamily('current 2.3.2', current.CANDIDATE_FILES, (text) => {
+  v232: runFamily('v2.3.2 stream+header', require(path.join(v232Dir, 'sandStream.js')).TARGET_SPECS.map((s) => s.rel), (text) =>
+    applyReleasedStream(v232Dir, text)
+  ),
+  current: runFamily('current 2.3.6', current.CANDIDATE_FILES, (text) => {
     const streamed = require('../src/sandStream').applySandPatches(text);
     return current.patchText(streamed.content).text;
   })

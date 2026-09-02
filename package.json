@@ -2,7 +2,7 @@
   "name": "cursor-account-manager",
   "displayName": "Cursor 账号管理",
   "description": "Cursor 多账号管理：切换账号、管理登录态、查看额度、踢设备、提取本机/浏览器 token。支持在 Cursor 调用 Grok Bot 高级模式额度，突破使用上限。",
-  "version": "2.3.2",
+  "version": "2.3.6",
   "publisher": "local",
   "license": "MIT",
   "repository": {
