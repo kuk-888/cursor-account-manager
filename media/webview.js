@@ -252,7 +252,7 @@
           : ('未注入 · 还有 ' + esc(s.unpatched || 0) + ' 处仍是 ide')));
     return '<div class="sandCard' + (on ? ' on' : '') + '">'
       + '<div class="sandHead"><h4>Sand 注入</h4><span class="sandBadge ' + badgeCls + '">' + badge + '</span></div>'
-      + '<p class="sandNote">注意事项：请将当前 Cursor 升级到最新版。</p>'
+      + '<p class="sandNote">注意事项：请使用 Cursor 3.18.9。</p>'
       + '<p class="sandHint">一键注入按 Sand Stream 1.2.6 写：请求头 <code>sand</code>、本机直推，以及 3.18.9 的 Task / 子代理 / resume / 后台回调。一键卸载兼容从 2.1.0 起所有 Release 打过的补丁（旧无标记请求头 + Stream 标记）。写完必须完整退出再打开，Reload 不够。</p>'
       + '<div class="sandBtns">'
         + '<button class="btn primary" data-action="sandApplyAsk"' + (on ? ' disabled' : '') + '>一键注入</button>'
@@ -287,7 +287,7 @@
     if (!dialog) return '';
     if (dialog.type === 'confirmSandApply') {
       return '<div class="modal" data-action="cancelDialog"><div class="dialog" data-stop="1"><h3>注入 Sand</h3>'
-        + '<p class="restartMsg">请先把当前 Cursor 升级到最新版（Task/子代理补丁按 3.18.9 对齐）。注入按 Sand Stream 1.2.6 写：请求头 <code>sand</code> + 本机直推 + Task 生命周期。先备份再写。写完必须完整退出再打开，Reload 不够。</p>'
+        + '<p class="restartMsg">请先确认当前 Cursor 为 3.18.9。注入按 Sand Stream 写：请求头 <code>sand</code> + 本机直推 + Task 生命周期。先备份再写。写完必须完整退出再打开，Reload 不够。</p>'
         + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">取消</button><button class="btn primary" data-action="sandApplyConfirm">一键注入</button></div></div></div>';
     }
     if (dialog.type === 'confirmSandRestore') {
