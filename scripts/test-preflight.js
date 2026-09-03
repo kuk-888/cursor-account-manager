@@ -34,12 +34,12 @@ assert.ok(totals, 'no target files found under unpack fixture');
 assert.ok(sand.lifecycleAttempted(totals), 'expected a stream inject on 3.18.9');
 const shortfall = sand.lifecycleShortfall(totals);
 assert.strictEqual(shortfall.length, 0, 'unexpected shortfall on clean 3.18.9: ' + JSON.stringify(shortfall));
-assert.ok(sand.streamModeInstalled(totals), 'streamModeInstalled should be true after slim apply');
-assert.ok(!sand.CLIENT_SUBAGENT_ENABLED, 'default build must keep client subagent off');
-assert.ok(!sand.streamLifecycleInstalled(totals), 'slim apply must not install full subagent lifecycle');
+assert.ok(sand.CLIENT_SUBAGENT_ENABLED, 'default build must keep client subagent on');
+assert.ok(sand.streamModeInstalled(totals), 'streamModeInstalled should be true after apply');
+assert.ok(sand.streamLifecycleInstalled(totals), 'full subagent lifecycle must install');
 assert.ok((totals.pushContextTimeout || 0) >= 2, 'desktop+glass must each get push_req_context timeout');
-assert.strictEqual(totals.subagentRoute || 0, 0, 'slim must skip subagentRoute');
-assert.strictEqual(totals.taskTool || 0, 0, 'slim must skip taskTool');
+assert.ok((totals.actionRoute || 0) >= 1, 'action route must install');
+assert.ok((totals.taskTool || 0) >= 1, 'task tool must install');
 
 // 2) 抠掉核心路由（模拟 657.js 没命中）→ 必须被抓出来。
 const crippled = { ...totals, managedLocal: 0 };
