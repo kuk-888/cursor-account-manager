@@ -21,14 +21,14 @@ const fixture =
 const applied = sand.applySandPatches(fixture);
 const d = sand.detectSand(applied.content);
 assert.ok(sand.streamModeInstalled(d), JSON.stringify(d, null, 2));
-assert.ok(!sand.CLIENT_SUBAGENT_ENABLED, 'default must be slim');
-assert.ok(!sand.streamLifecycleInstalled(d), 'slim must skip full lifecycle');
-assert.strictEqual(d.subagentRoute, 0);
-assert.strictEqual(d.subagentSession, 0);
-assert.strictEqual(d.taskTool, 0);
-assert.strictEqual(d.actionRoute, 0);
-assert.strictEqual(d.resumeMode, 0);
-assert.strictEqual(d.completionWake, 0);
+assert.ok(sand.CLIENT_SUBAGENT_ENABLED, 'default must keep client subagent on');
+assert.ok(sand.streamLifecycleInstalled(d), JSON.stringify(d, null, 2));
+assert.strictEqual(d.subagentRoute, 1);
+assert.strictEqual(d.subagentSession, 1);
+assert.strictEqual(d.taskTool, 1);
+assert.strictEqual(d.actionRoute, 1);
+assert.strictEqual(d.resumeMode, 1);
+assert.strictEqual(d.completionWake, 2);
 assert.strictEqual(d.pushContextTimeout, 1);
 assert.ok(applied.content.includes('Ykd=200/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/'));
 const from500 = sand.applySandPatches(
@@ -45,4 +45,4 @@ const unmigrated = sand.removeSandPatches(v125);
 assert.ok(unmigrated.content.includes('taskToolProps:void 0},resolvers:'));
 assert.ok(!unmigrated.content.includes('SAND_MANAGED_TASK_TOOL'));
 
-console.log('sand stream slim core + timeout patches ok');
+console.log('sand stream lifecycle + timeout patches ok');

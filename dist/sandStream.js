@@ -3,9 +3,8 @@
 const crypto = require("crypto");
 const path = require("path");
 
-// 默认精简：只打核心 Bot 路由+直连流+push_req_context 超时，不注入子代理/Task/resume/后台唤醒。
-// 打包脚本在 CAM_WITH_SUBAGENT=1 时会把它改成 true，产出完整生命周期对照版。
-const CLIENT_SUBAGENT_ENABLED = false;
+// 默认打满子代理生命周期（Task / action / resume / 后台唤醒）。CAM_NO_SUBAGENT=1 才打精简对照包。
+const CLIENT_SUBAGENT_ENABLED = true;
 const SUBAGENT_LIFECYCLE_KEYS = [
   "subagentRoute",
   "subagentSession",
