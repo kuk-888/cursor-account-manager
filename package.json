@@ -2,7 +2,7 @@
   "name": "cursor-account-manager",
   "displayName": "Cursor 账号管理",
   "description": "Cursor 多账号管理：一键切号、查看额度、踢设备、Grok Bot 路由加速。所有 token 只存本机。",
-  "version": "2.3.10",
+  "version": "2.3.11",
   "publisher": "local",
   "license": "MIT",
   "homepage": "https://github.com/kuk-888/cursor-account-manager",
