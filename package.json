@@ -5,9 +5,13 @@
   "version": "2.3.7",
   "publisher": "local",
   "license": "MIT",
+  "homepage": "https://github.com/kuk-888/cursor-account-manager",
   "repository": {
     "type": "git",
     "url": "https://github.com/kuk-888/cursor-account-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kuk-888/cursor-account-manager/issues"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -152,6 +156,6 @@
   },
   "scripts": {
     "build": "node scripts/build-extension.js",
-    "package": "node scripts/build-extension.js && vsce package --allow-missing-repository --no-dependencies"
+    "package": "node scripts/build-extension.js && vsce package --no-dependencies"
   }
 }
