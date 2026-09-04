@@ -1,79 +1,53 @@
 # Cursor 账号管理
 
-Cursor 多账号管理：切换账号、管理登录态、查看额度、踢设备、提取本机/浏览器 token。支持在 Cursor 调用 Grok Bot 高级模式额度，突破使用上限。2.3 起一键注入为 Grok Bot 路由模式（Sand Stream），**请使用 Cursor 3.18.9**再注入。
-
-侧栏名称：**账号管理**。命令面板搜「账号管理」或 `Cursor Account Manager`。
+Cursor 多账号管理插件：一键切号、查看额度、踢设备、Grok Bot 路由加速。
 
 仓库：[github.com/kuk-888/cursor-account-manager](https://github.com/kuk-888/cursor-account-manager)
 
-本仓库版本从 **2.1.0** 起算。
-
-| 账号列表 | 更多 · 备注 |
-| --- | --- |
-| ![账号列表](docs/screenshot-accounts.png) | ![更多与备注](docs/screenshot-more.png) |
-
-业务逻辑对齐 `keepchat-5.3.7-accounts(1).vsix`（文件名写 5.3.7，包内版本是 5.3.6）。这里只改了扩展名和中文包装：id 为 `local.cursor-account-manager`，侧栏「账号管理」，旧 `keepchat.*` 命令/配置仍可用。切号、额度、踢设备、浏览器授权、Sand 补丁与那份安装包一致。
-
-## 能做什么
+## 功能
 
 | 功能 | 说明 |
 |---|---|
-| **切换账号** | 把选中账号写入 Cursor 登录态。写完后必须完整退出再打开，只 Reload 窗口不够 |
-| **管理登录态** | 账号列表存在本扩展本地存储，覆盖安装不会丢号 |
-| **查看额度** | 联网读取 Auto / Other / Bot 用量，以及重置时间 |
-| **账号备注** | 「更多 → 备注」给账号加短标签，显示在邮箱旁边，只存在本机 |
-| **点击复制** | 点邮箱复制邮箱；更多里可复制 Token |
-| **踢人** | 查看该账号已登录的设备，可把某台踢下线（最多大约 10 分钟生效） |
-| **提取本机 Token** | 「导入本机」读取当前 Cursor 已登录的 token，加入列表（不会自动切换） |
-| **浏览器授权提取 Token** | 打开隔离浏览器走官方登录，拿到可自动续期的令牌 |
-| **Token / Cookie 导入** | 粘贴 `userId::accessToken`，有第三段 refreshToken 的可以自动续期 |
-| **一键导出 / 导入** | 导出全部账号为 JSON（先预览再保存）；导入前先看新增/更新清单。文件含明文 token，只放本机 |
-| **Grok Bot 路由模式** | 一键注入按 Sand Stream 写（请求头 `sand` + 本机直推 + Task / 子代理）。**需使用 Cursor 3.18.9** |
-| **一键卸载** | 从 2.1.0 起的注入都能卸；备份对不上时就地反补丁。写完必须完整退出再打开 |
+| **切换账号** | 多个 Cursor 账号一键切换，覆盖安装不丢号 |
+| **查看额度** | 联网读取 Auto / Other / Bot 用量和重置时间 |
+| **浏览器授权** | 一键打开隔离浏览器登录，拿到可自动续期的令牌 |
+| **踢设备** | 查看已登录设备，踢掉不用的 |
+| **导入导出** | 导出全部账号为 JSON，导入时先预览再确认 |
+| **Grok Bot 加速** | 一键注入后走 Bot 额度提问，大幅提升响应速度 |
+| **一键卸载** | 还原 Cursor 到注入前的原始状态 |
 
-## 切换账号注意
+## Grok Bot 一键注入
 
-1. 推荐用 **浏览器授权** 加号。这样有真的续期令牌，切过去不容易过期弹登录框。
-2. 网页 Cookie / 只有 web token 的账号可以进列表看额度，但切成全局登录后，Cursor 可能要求重新登录。建议先点「升级授权」。
-3. 写入前会备份 `state.vscdb`。切前若 client 账号的 accessToken 已过期，会先续期再写。
-4. 写入后校验邮箱和 userId。对不上会报错，不要只 Reload，要完整退出 Cursor 再开。
-5. 运行中的 Cursor 把登录态缓存在内存里，必须完整重启才会从库里重新读。
+> 仅兼容 **Cursor 3.18.9 / 3.18.25**，其他版本未做测试。
 
-## 本机安装
+注入后的效果：
+- 提问走 Grok Bot 额度，不消耗 Cursor 订阅额度
+- 响应速度大幅提升（消除 Planning 等待）
+- 支持子代理 / Task / resume 等完整 Agent 能力
 
-```bash
-npm run package
-```
+使用方法：
+1. 侧栏「Grok Bot」页面 → 点**一键注入**
+2. **完全退出 Cursor**（托盘也退干净），再重新打开
+3. 要还原就点**一键卸载**，同样退出再重开
 
-命令面板 → `Extensions: Install from VSIX...` → 选打好的 `.vsix` → 重载窗口。
+注意事项：
+- 注入前会自动备份原始文件，卸载可还原
+- 缺补丁或版本不匹配会自动拒绝写入，不会写坏
+- 只 Reload 窗口不够，必须完全退出再打开
 
-侧栏会出现 **账号管理**。
+## 切换账号
 
-## 开发
+1. 推荐用**浏览器授权**加号（可自动续期，不容易掉登录）
+2. 切号后必须**完全退出 Cursor 再打开**
+3. 导出文件含明文 token，请妥善保管
 
-```bash
-npm run build
-npm run package
-```
+## 安装
 
-源码在 `src/`，构建后复制到 `dist/`。
+命令面板 → `Extensions: Install from VSIX...` → 选 `.vsix` 文件。侧栏会出现**账号管理**。
 
-## 配置
+## 安全
 
-设置里搜「账号管理」或 `Cursor Account Manager`：
-
-- `cursorAccountManager.accountUsageEnabled` — 是否联网读额度
-- `cursorAccountManager.autoRefreshAccountTokens` — 后台自动续期
-- `cursorAccountManager.sandAppRoot` — 可选，指定 Cursor 安装目录
-- `cursorAccountManager.cursorOAuthClientId` — 一般不用改
-- `cursorAccountManager.manualCursorToken` — 手动覆盖本机登录态（切号成功后会清空）
-
-早期测试包用过的 `keepchat.*` 配置仍然兼容。
-
-## 说明
-
-- 扩展 id：`local.cursor-account-manager`
-- 注入会改 Cursor 安装文件，先备份再写。这是 Grok Bot 路由模式更新，需使用 Cursor 3.18.9；其它版本可能注不进去或只能改到请求头
-- 注入默认打满 Stream（含 Task / 子代理）+ 路由等待缩短。缺补丁或注入不完整会拒绝写入。若被拒，先「一键卸载」还原、完整重启 Cursor 再注入
-- 要还原用「一键卸载」：从 2.1.0 的无标记请求头、2.3.1/2.3.2 的全量 Stream，到 2.3.6 的超时标记都能卸
-- Token 只存在你这台电脑的扩展存储和 Cursor 自己的登录库里，不会上传到网上
+- 所有 token 只存在本机，不会上传到任何服务器
+- 只与 `cursor.com` 和 `api2.cursor.sh`（Cursor 官方）通信
+- 不含任何第三方分析/追踪代码
+- [源码公开](https://github.com/kuk-888/cursor-account-manager)，欢迎审查

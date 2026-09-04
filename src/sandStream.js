@@ -31,6 +31,7 @@ const SAND_MANAGED_ACTION_ROUTE_MARKER = "/*SAND_MANAGED_ACTION_ROUTE_V1*/";
 const SAND_SUBAGENT_RESUME_MODE_MARKER = "/*SAND_SUBAGENT_RESUME_AGENT_MODE_V1*/";
 const SAND_SUBAGENT_COMPLETION_WAKE_MARKER = "/*SAND_SUBAGENT_COMPLETION_WAKE_V1*/";
 const SAND_PUSH_CONTEXT_TIMEOUT_MARKER = "/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/";
+const SAND_RULES_PRESEED_MARKER = "/*SAND_RULES_PRESEED_V1*/";
 const LEGACY_SAND_CLIENT_MARKER = "/*KC_SAND_CLIENT_V1*/";
 const LEGACY_SAND_ELIGIBILITY_MARKER = "/*KC_SAND_ELIGIBILITY_V1*/";
 
@@ -48,6 +49,7 @@ const TARGET_SPECS = [
   { rel: path.join("extensions", "cursor-agent-host", "dist", "main.js"), ext: "cursor-agent-host" },
   { rel: path.join("extensions", "cursor-agent-exec", "dist", "main.js"), ext: "cursor-agent-exec" },
   { rel: path.join("extensions", "cursor-agent-host", "dist", "657.js") },
+  { rel: path.join("extensions", "cursor-agent-host", "dist", "61.js") },
   { rel: path.join("extensions", "cursor-agent-host", "dist", "675.js") },
 ];
 
@@ -114,13 +116,14 @@ const MANAGED_ACTION_ROUTE_PATCHED =
   'e.hasModelCredentials?"private-model-not-supported":' +
   'e.hasUnsupportedRunOptions?"run-options-not-supported":void 0';
 
-const SUBAGENT_RESUME_MODE_ORIGINAL =
-  "e.resumeAgentId&&e.mode===Mn.FL.UNSPECIFIED&&!e.readonly?" +
-  "oe.xyI.UNSPECIFIED:";
-const SUBAGENT_RESUME_MODE_PATCHED =
-  "e.resumeAgentId&&e.mode===Mn.FL.UNSPECIFIED&&!e.readonly?" +
-  SAND_SUBAGENT_RESUME_MODE_MARKER +
-  "oe.xyI.AGENT:";
+const SUBAGENT_RESUME_MODE_RE =
+  /e\.resumeAgentId&&e\.mode===([A-Za-z_$][\w$]*)\.FL\.UNSPECIFIED&&!e\.readonly\?oe\.xyI\.UNSPECIFIED:/g;
+const SUBAGENT_RESUME_MODE_PATCH_RE = new RegExp(
+  "e\\.resumeAgentId&&e\\.mode===([A-Za-z_$][\\w$]*)\\.FL\\.UNSPECIFIED&&!e\\.readonly\\?" +
+    SAND_SUBAGENT_RESUME_MODE_MARKER.replace(/[/*]/g, "\\$&") +
+    "oe\\.xyI\\.AGENT:",
+  "g"
+);
 
 const SUBAGENT_COMPLETION_WAKE_RE =
   /([A-Za-z_$][A-Za-z0-9_$]*)\.source==="interactive-child"\|\|\1\.payload\.notificationContext==="user_driven_interactive_child"/g;
@@ -131,30 +134,30 @@ const SUBAGENT_COMPLETION_WAKE_PATCH_RE = new RegExp(
   "g"
 );
 
-const MANAGED_SUBAGENT_SESSION_ORIGINAL =
-  "const Cre={enableEmptyResponseRetry:!0,enableGrepBroadGlobGuard:!0," +
-  "enableReadToolNegativeOffset:!0,enableSandboxSharedBuildCache:!0," +
-  "nalLoopDetection:!0};";
-const MANAGED_SUBAGENT_SESSION_PATCHED =
-  "const Cre={enableEmptyResponseRetry:!0,enableGrepBroadGlobGuard:!0," +
-  "enableReadToolNegativeOffset:!0,enableSandboxSharedBuildCache:!0," +
-  "nalLoopDetection:!0,useClientSideSubagent:!0" +
-  SAND_MANAGED_SUBAGENT_SESSION_MARKER +
-  "};";
+const MANAGED_SUBAGENT_SESSION_RE =
+  /const ([A-Za-z_$][\w$]*)=\{enableEmptyResponseRetry:!0,enableGrepBroadGlobGuard:!0,enableReadToolNegativeOffset:!0,enableSandboxSharedBuildCache:!0,nalLoopDetection:!0\};/g;
+const MANAGED_SUBAGENT_SESSION_PATCH_RE = new RegExp(
+  "const ([A-Za-z_$][\\w$]*)=\\{enableEmptyResponseRetry:!0,enableGrepBroadGlobGuard:!0," +
+    "enableReadToolNegativeOffset:!0,enableSandboxSharedBuildCache:!0," +
+    "nalLoopDetection:!0,useClientSideSubagent:!0" +
+    SAND_MANAGED_SUBAGENT_SESSION_MARKER.replace(/[/*]/g, "\\$&") +
+    "\\};",
+  "g"
+);
 
 const MANAGED_TASK_TOOL_ORIGINAL =
   "isGenerateImageModelRestricted:!1,taskToolProps:void 0},resolvers:";
 
-const DIRECT_STREAM_ANCHOR =
-  "function hre(e){return t=>{return n=this,o=void 0,s=function*(){";
+const DIRECT_STREAM_ANCHOR_RE =
+  /function ([A-Za-z_$][\w$]*)\(e\)\{return t=>\{return n=this,o=void 0,s=function\*\(\)\{/;
 
 // push_req_context 超时：缓存未命中时 getPushedRulesProto 最多等 1e4ms（10s），
-// 走 Bot 时常等满。改成 200ms。标识符随压缩名变（3.18.9=Ykd/v$p，3.18.25=yCd/pWp），只锁字段形状。
-const PUSH_CONTEXT_TIMEOUT_MS = 200;
+// 走 Bot 时常等满。改成 50ms 作为安全网（预填充补丁通常让 peek 直接命中，不走这条路）。
+const PUSH_CONTEXT_TIMEOUT_MS = 50;
 const PUSH_CONTEXT_TIMEOUT_ORIGINAL_RE =
   /("\[push_req_context\]",)([A-Za-z_$][\w$]*)=1e4/g;
 const PUSH_CONTEXT_TIMEOUT_PATCHED_RE = new RegExp(
-  '("\\[push_req_context\\]",)([A-Za-z_$][\\w$]*)=(?:200|500)' +
+  '("\\[push_req_context\\]",)([A-Za-z_$][\\w$]*)=(?:50|200|500)' +
     SAND_PUSH_CONTEXT_TIMEOUT_MARKER.replace(/[/*]/g, "\\$&"),
   "g"
 );
@@ -180,6 +183,13 @@ function removePushContextTimeout(content, stats) {
     return prefix + ident + "=1e4";
   });
 }
+
+// 预填充：cursorRulesService 构造时 _lastPushedRulesProto=void 0，
+// 导致首问 peek 返回 undefined、走 timeout 等待。改成 [] 让 peek 直接返回空数组，
+// agent-host 随后推送真规则覆盖。效果：首问零等待（可能少带规则），后续问正常。
+const RULES_PRESEED_ORIGINAL = "this._lastPushedRulesProto=void 0,this._providerRulesCache=new Map";
+const RULES_PRESEED_PATCHED =
+  "this._lastPushedRulesProto=[]" + SAND_RULES_PRESEED_MARKER + ",this._providerRulesCache=new Map";
 
 const AGENT_HOST_ENABLEMENT_RE = /(this\._agentHostEnabled=)([A-Za-z_$][A-Za-z0-9_$]*)(,)/;
 const AGENT_HOST_ENABLEMENT_PATCH_RE = new RegExp(
@@ -212,6 +222,7 @@ function emptyStats() {
     subagent_resume_mode: 0,
     subagent_completion_wake: 0,
     push_context_timeout: 0,
+    rules_preseed: 0,
   };
 }
 
@@ -236,7 +247,8 @@ function sumStats(s) {
     s.managed_action_route +
     s.subagent_resume_mode +
     s.subagent_completion_wake +
-    s.push_context_timeout
+    s.push_context_timeout +
+    s.rules_preseed
   );
 }
 
@@ -327,7 +339,7 @@ function directStreamInjection() {
     'isGpt52Codex:i.includes("gpt-5.2-codex"),' +
     'isCodexFamily:i.includes("codex"),isGpt5Family:i.includes("gpt-5")};' +
     "return{promptSession:s,promptToolSession:p,attempt:{resolvedModel:cre(n)," +
-    "supportsSelfSummary:!1,routedModelDisplayName:o," +
+    "supportsSelfSummary:!0,routedModelDisplayName:o," +
     "resolvedModelMetadata:nre(a,o)," +
     "finish:()=>Promise.resolve()}}}"
   );
@@ -427,10 +439,12 @@ function applySandPatches(content) {
     stats.managed_action_route += actionRouteCount;
   }
 
-  const resumeModeCount = next.split(SUBAGENT_RESUME_MODE_ORIGINAL).length - 1;
-  if (resumeModeCount) {
-    next = next.split(SUBAGENT_RESUME_MODE_ORIGINAL).join(SUBAGENT_RESUME_MODE_PATCHED);
-    stats.subagent_resume_mode += resumeModeCount;
+  if (!next.includes(SAND_SUBAGENT_RESUME_MODE_MARKER)) {
+    next = next.replace(SUBAGENT_RESUME_MODE_RE, (full, ident) => {
+      stats.subagent_resume_mode += 1;
+      return "e.resumeAgentId&&e.mode===" + ident + ".FL.UNSPECIFIED&&!e.readonly?" +
+        SAND_SUBAGENT_RESUME_MODE_MARKER + "oe.xyI.AGENT:";
+    });
   }
 
   if (!next.includes(SAND_SUBAGENT_COMPLETION_WAKE_MARKER)) {
@@ -446,10 +460,14 @@ function applySandPatches(content) {
     });
   }
 
-  const subagentSessionCount = next.split(MANAGED_SUBAGENT_SESSION_ORIGINAL).length - 1;
-  if (subagentSessionCount) {
-    next = next.split(MANAGED_SUBAGENT_SESSION_ORIGINAL).join(MANAGED_SUBAGENT_SESSION_PATCHED);
-    stats.managed_subagent_session += subagentSessionCount;
+  if (!next.includes(SAND_MANAGED_SUBAGENT_SESSION_MARKER)) {
+    next = next.replace(MANAGED_SUBAGENT_SESSION_RE, (full, ident) => {
+      stats.managed_subagent_session += 1;
+      return "const " + ident + "={enableEmptyResponseRetry:!0,enableGrepBroadGlobGuard:!0," +
+        "enableReadToolNegativeOffset:!0,enableSandboxSharedBuildCache:!0," +
+        "nalLoopDetection:!0,useClientSideSubagent:!0" +
+        SAND_MANAGED_SUBAGENT_SESSION_MARKER + "};";
+    });
   }
 
   for (const previous of [managedTaskToolPatchedV125(), managedTaskToolPatchedV124()]) {
@@ -473,8 +491,8 @@ function applySandPatches(content) {
     stats.agent_host_identity += identityCount;
   }
 
-  if (!next.includes(SAND_DIRECT_STREAM_MARKER) && next.includes(DIRECT_STREAM_ANCHOR)) {
-    next = next.replace(DIRECT_STREAM_ANCHOR, DIRECT_STREAM_ANCHOR + directStreamInjection());
+  if (!next.includes(SAND_DIRECT_STREAM_MARKER) && DIRECT_STREAM_ANCHOR_RE.test(next)) {
+    next = next.replace(DIRECT_STREAM_ANCHOR_RE, (match) => match + directStreamInjection());
     stats.direct_stream += 1;
   }
 
@@ -486,6 +504,14 @@ function applySandPatches(content) {
   }
 
   next = applyPushContextTimeout(next, stats);
+
+  if (!next.includes(SAND_RULES_PRESEED_MARKER)) {
+    const preseedCount = next.split(RULES_PRESEED_ORIGINAL).length - 1;
+    if (preseedCount) {
+      next = next.split(RULES_PRESEED_ORIGINAL).join(RULES_PRESEED_PATCHED);
+      stats.rules_preseed += preseedCount;
+    }
+  }
 
   return { content: next, stats };
 }
@@ -554,11 +580,10 @@ function removeSandPatches(content) {
     stats.managed_action_route += actionRouteCount;
   }
 
-  const resumeModeCount = next.split(SUBAGENT_RESUME_MODE_PATCHED).length - 1;
-  if (resumeModeCount) {
-    next = next.split(SUBAGENT_RESUME_MODE_PATCHED).join(SUBAGENT_RESUME_MODE_ORIGINAL);
-    stats.subagent_resume_mode += resumeModeCount;
-  }
+  next = next.replace(SUBAGENT_RESUME_MODE_PATCH_RE, (full, ident) => {
+    stats.subagent_resume_mode += 1;
+    return "e.resumeAgentId&&e.mode===" + ident + ".FL.UNSPECIFIED&&!e.readonly?oe.xyI.UNSPECIFIED:";
+  });
 
   next = next.replace(SUBAGENT_COMPLETION_WAKE_PATCH_RE, (full, variable) => {
     stats.subagent_completion_wake += 1;
@@ -584,11 +609,12 @@ function removeSandPatches(content) {
     }
   }
 
-  const subagentSessionCount = next.split(MANAGED_SUBAGENT_SESSION_PATCHED).length - 1;
-  if (subagentSessionCount) {
-    next = next.split(MANAGED_SUBAGENT_SESSION_PATCHED).join(MANAGED_SUBAGENT_SESSION_ORIGINAL);
-    stats.managed_subagent_session += subagentSessionCount;
-  }
+  next = next.replace(MANAGED_SUBAGENT_SESSION_PATCH_RE, (full, ident) => {
+    stats.managed_subagent_session += 1;
+    return "const " + ident + "={enableEmptyResponseRetry:!0,enableGrepBroadGlobGuard:!0," +
+      "enableReadToolNegativeOffset:!0,enableSandboxSharedBuildCache:!0," +
+      "nalLoopDetection:!0};";
+  });
 
   const identityCount = next.split(AGENT_HOST_IDENTITY_PATCHED).length - 1;
   if (identityCount) {
@@ -610,30 +636,41 @@ function removeSandPatches(content) {
 
   next = removePushContextTimeout(next, stats);
 
+  const preseedCount = next.split(RULES_PRESEED_PATCHED).length - 1;
+  if (preseedCount) {
+    next = next.split(RULES_PRESEED_PATCHED).join(RULES_PRESEED_ORIGINAL);
+    stats.rules_preseed += preseedCount;
+  }
+
   return { content: next, stats };
+}
+
+function countOf(text, needle) {
+  let n = 0, i = 0;
+  while ((i = text.indexOf(needle, i)) !== -1) { n++; i += needle.length; }
+  return n;
 }
 
 function detectSand(content) {
   return {
-    client: (content.split(SAND_CLIENT_MARKER).length - 1) + (content.split(SAND_CLIENT_EXISTING_MARKER).length - 1),
-    eligibility: content.split(SAND_ELIGIBILITY_MARKER).length - 1,
-    managedLocal: content.split(SAND_MANAGED_LOCAL_ROUTE_MARKER).length - 1,
-    runtimeLoad: content.split(SAND_LOCAL_RUNTIME_LOAD_MARKER).length - 1,
-    moveExec: content.split(SAND_AGENT_HOST_MOVE_EXEC_MARKER).length - 1,
-    directStream: content.split(SAND_DIRECT_STREAM_MARKER).length - 1,
-    agentHost: content.split(SAND_AGENT_HOST_ENABLEMENT_MARKER).length - 1,
-    identity: content.split(SAND_AGENT_HOST_IDENTITY_MARKER).length - 1,
-    subagentRoute: content.split(SAND_MANAGED_SUBAGENT_ROUTE_MARKER).length - 1,
-    subagentSession: content.split(SAND_MANAGED_SUBAGENT_SESSION_MARKER).length - 1,
-    taskTool: content.split(SAND_MANAGED_TASK_TOOL_MARKER).length - 1,
-    legacyTaskTool: content.split(LEGACY_SAND_MANAGED_TASK_TOOL_MARKER).length - 1,
-    actionRoute: content.split(SAND_MANAGED_ACTION_ROUTE_MARKER).length - 1,
-    resumeMode: content.split(SAND_SUBAGENT_RESUME_MODE_MARKER).length - 1,
-    completionWake: content.split(SAND_SUBAGENT_COMPLETION_WAKE_MARKER).length - 1,
-    pushContextTimeout: content.split(SAND_PUSH_CONTEXT_TIMEOUT_MARKER).length - 1,
-    legacy:
-      (content.split(LEGACY_SAND_CLIENT_MARKER).length - 1) +
-      (content.split(LEGACY_SAND_ELIGIBILITY_MARKER).length - 1),
+    client: countOf(content, SAND_CLIENT_MARKER) + countOf(content, SAND_CLIENT_EXISTING_MARKER),
+    eligibility: countOf(content, SAND_ELIGIBILITY_MARKER),
+    managedLocal: countOf(content, SAND_MANAGED_LOCAL_ROUTE_MARKER),
+    runtimeLoad: countOf(content, SAND_LOCAL_RUNTIME_LOAD_MARKER),
+    moveExec: countOf(content, SAND_AGENT_HOST_MOVE_EXEC_MARKER),
+    directStream: countOf(content, SAND_DIRECT_STREAM_MARKER),
+    agentHost: countOf(content, SAND_AGENT_HOST_ENABLEMENT_MARKER),
+    identity: countOf(content, SAND_AGENT_HOST_IDENTITY_MARKER),
+    subagentRoute: countOf(content, SAND_MANAGED_SUBAGENT_ROUTE_MARKER),
+    subagentSession: countOf(content, SAND_MANAGED_SUBAGENT_SESSION_MARKER),
+    taskTool: countOf(content, SAND_MANAGED_TASK_TOOL_MARKER),
+    legacyTaskTool: countOf(content, LEGACY_SAND_MANAGED_TASK_TOOL_MARKER),
+    actionRoute: countOf(content, SAND_MANAGED_ACTION_ROUTE_MARKER),
+    resumeMode: countOf(content, SAND_SUBAGENT_RESUME_MODE_MARKER),
+    completionWake: countOf(content, SAND_SUBAGENT_COMPLETION_WAKE_MARKER),
+    pushContextTimeout: countOf(content, SAND_PUSH_CONTEXT_TIMEOUT_MARKER),
+    rulesPreseed: countOf(content, SAND_RULES_PRESEED_MARKER),
+    legacy: countOf(content, LEGACY_SAND_CLIENT_MARKER) + countOf(content, LEGACY_SAND_ELIGIBILITY_MARKER),
   };
 }
 
@@ -656,6 +693,7 @@ function hasSandMarkers(content) {
       d.resumeMode +
       d.completionWake +
       d.pushContextTimeout +
+      d.rulesPreseed +
       d.legacy >
     0
   );

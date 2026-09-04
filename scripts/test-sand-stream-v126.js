@@ -16,7 +16,8 @@ const fixture =
   'clientIdentity:{clientType:"ide"}' +
   'function hre(e){return t=>{return n=this,o=void 0,s=function*(){' +
   'this._agentHostEnabled=gate,' +
-  '$4i="[push_req_context]",Ykd=1e4';
+  '$4i="[push_req_context]",Ykd=1e4' +
+  'this._lastPushedRulesProto=void 0,this._providerRulesCache=new Map';
 
 const applied = sand.applySandPatches(fixture);
 const d = sand.detectSand(applied.content);
@@ -30,12 +31,13 @@ assert.strictEqual(d.actionRoute, 1);
 assert.strictEqual(d.resumeMode, 1);
 assert.strictEqual(d.completionWake, 2);
 assert.strictEqual(d.pushContextTimeout, 1);
-assert.ok(applied.content.includes('Ykd=200/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/'));
-const from500 = sand.applySandPatches(
-  fixture.replace('Ykd=1e4', 'Ykd=500/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/')
+assert.ok(applied.content.includes('Ykd=50/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/'));
+assert.ok(applied.content.includes('_lastPushedRulesProto=[]/*SAND_RULES_PRESEED_V1*/'));
+const from200 = sand.applySandPatches(
+  fixture.replace('Ykd=1e4', 'Ykd=200/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/')
 );
-assert.ok(from500.content.includes('Ykd=200/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/'));
-assert.ok(!from500.content.includes('Ykd=500/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/'));
+assert.ok(from200.content.includes('Ykd=50/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/'));
+assert.ok(!from200.content.includes('Ykd=200/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/'));
 
 const removed = sand.removeSandPatches(applied.content);
 assert.strictEqual(removed.content, fixture, 'apply/remove should be reversible');

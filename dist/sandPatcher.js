@@ -166,6 +166,7 @@ function emptyStreamTotals() {
     resumeMode: 0,
     completionWake: 0,
     pushContextTimeout: 0,
+    rulesPreseed: 0,
     legacy: 0
   };
 }
@@ -226,6 +227,7 @@ const LEFTOVER_MARKERS = [
   'SAND_SUBAGENT_RESUME_AGENT_MODE_V1',
   'SAND_SUBAGENT_COMPLETION_WAKE_V1',
   'SAND_PUSH_CONTEXT_TIMEOUT_V1',
+  'SAND_RULES_PRESEED_V1',
   'KC_SAND_CLIENT_V1',
   'KC_SAND_ELIGIBILITY_V1'
 ];
@@ -320,12 +322,15 @@ function projectStreamTotals(appRoot, changes) {
   return totals;
 }
 
+const TESTED_CURSOR_VERSIONS = ['3.18.9', '3.18.25'];
+
 function shortfallMessage(shortfall, version) {
   const detail = shortfall.map((item) => `${item.key} ${item.have}/${item.want}`).join('，');
   return (
     `Sand Stream 补丁未完整命中，已中止写入（缺：${detail}）。` +
     `当前 Cursor ${version} 可能与补丁规则不完全匹配，或此前被旧版本部分改写。` +
-    `请先「一键卸载」还原，完整退出并重开 Cursor 后再重新「一键注入」；若仍失败请把这条 Cursor 版本号反馈给作者。`
+    `请先「一键卸载」还原，完整退出并重开 Cursor 后再重新「一键注入」；若仍失败请把这条 Cursor 版本号反馈给作者。` +
+    `（已测试版本：${TESTED_CURSOR_VERSIONS.join('、')}）`
   );
 }
 
@@ -333,9 +338,9 @@ function scanCandidatePaths(appRoot) {
   return pathsFromRels(appRoot, SCAN_FILES);
 }
 
-function inspect(appRoot) {
+function inspect(appRoot, productOverride) {
   const root = assertAppRoot(appRoot);
-  const product = JSON.parse(fs.readFileSync(path.join(root, 'product.json'), 'utf8'));
+  const product = productOverride || JSON.parse(fs.readFileSync(path.join(root, 'product.json'), 'utf8'));
   const files = scanCandidatePaths(root).map(({ rel, abs }) => {
     const data = fs.readFileSync(abs);
     const analysis = analyzeText(data.toString('utf8'));
@@ -358,6 +363,7 @@ function inspect(appRoot) {
   return {
     appRoot: root,
     version: product.version || 'unknown',
+    product,
     files,
     totals,
     streamMode,
@@ -482,9 +488,20 @@ function restoreInPlace(root) {
   };
 }
 
+function isTestedVersion(version) {
+  return TESTED_CURSOR_VERSIONS.some((v) => version === v || version.startsWith(v + '.'));
+}
+
 function applyPatchLocked({ appRoot, stateRoot, dryRun = false }) {
   const root = assertAppRoot(appRoot || defaultAppRoot());
   const before = inspect(root);
+  if (!isTestedVersion(before.version)) {
+    const msg =
+      `注意：当前 Cursor ${before.version} 不在已测试列表内（${TESTED_CURSOR_VERSIONS.join('、')}）。` +
+      `注入仍会尝试，但如果补丁命中不全会被拒绝写入。`;
+    if (typeof console !== 'undefined') console.warn('[SandPatcher]', msg);
+    before._versionWarning = msg;
+  }
   const changes = [];
 
   for (const { rel, abs } of applyCandidatePaths(root)) {
@@ -754,6 +771,7 @@ module.exports = {
   SCAN_FILES,
   LEGACY_HEADER_RELS,
   LEFTOVER_MARKERS,
+  TESTED_CURSOR_VERSIONS,
   analyzeText,
   applyPatch,
   defaultAppRoot,
