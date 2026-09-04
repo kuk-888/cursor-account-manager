@@ -339,7 +339,7 @@ function directStreamInjection() {
     'isGpt52Codex:i.includes("gpt-5.2-codex"),' +
     'isCodexFamily:i.includes("codex"),isGpt5Family:i.includes("gpt-5")};' +
     "return{promptSession:s,promptToolSession:p,attempt:{resolvedModel:cre(n)," +
-    "supportsSelfSummary:!0,routedModelDisplayName:o," +
+    "supportsSelfSummary:!1,routedModelDisplayName:o," +
     "resolvedModelMetadata:nre(a,o)," +
     "finish:()=>Promise.resolve()}}}"
   );
