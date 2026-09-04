@@ -4,6 +4,8 @@ Cursor 多账号管理：切换账号、管理登录态、查看额度、踢设�
 
 侧栏名称：**账号管理**。命令面板搜「账号管理」或 `Cursor Account Manager`。
 
+仓库：[github.com/kuk-888/cursor-account-manager](https://github.com/kuk-888/cursor-account-manager)
+
 本仓库版本从 **2.1.0** 起算。
 
 | 账号列表 | 更多 · 备注 |
