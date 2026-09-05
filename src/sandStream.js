@@ -1,5 +1,5 @@
-// Sand Stream 补丁（对齐 sand_stream_installer 1.2.6-subagent-lifecycle-fixed / Cursor 3.18.9）
-// 注入与卸载都走同一套标记，兼容该脚本装过的客户端。
+// Sand Stream 补丁（Cursor 3.18.9 / 3.18.25 / 3.19.13）
+// 先打 3.18 旧字面量，再打 3.19 新形态；卸载兼容 2.1.0–2.3.11 全部历史标记。
 const crypto = require("crypto");
 const path = require("path");
 
@@ -34,6 +34,94 @@ const SAND_PUSH_CONTEXT_TIMEOUT_MARKER = "/*SAND_PUSH_CONTEXT_TIMEOUT_V1*/";
 const SAND_RULES_PRESEED_MARKER = "/*SAND_RULES_PRESEED_V1*/";
 const LEGACY_SAND_CLIENT_MARKER = "/*KC_SAND_CLIENT_V1*/";
 const LEGACY_SAND_ELIGIBILITY_MARKER = "/*KC_SAND_ELIGIBILITY_V1*/";
+const ROUTE_HINT_MARKER = "/*ROUTE_HINT_V1*/";
+const ROUTE_HINT_LINE = "> grok-bot route to ";
+const ROUTE_LABEL_MARKER = "/*ROUTE_LABEL_V1*/";
+const ROUTE_LABEL_ORIGINAL = '["Routed to "';
+const ROUTE_LABEL_PATCHED = ROUTE_LABEL_MARKER + '["本次使用 "';
+
+const ROUTE_HINT_HANDLE_RE =
+  /handleRoutedModel\(([A-Za-z_$][\w$]*)\)\{if\(\1\.length===0\)return;this\.pendingRoutedModelLabel=\1;(?!\/\*ROUTE_HINT_V1\*\/)/g;
+const ROUTE_HINT_HANDLE_PAYLOAD_RE =
+  /\/\*ROUTE_HINT_V1\*\/try\{this\._routeHintLast!==([A-Za-z_$][\w$]*)&&\(this\._routeHintLast=\1,this\.handleTextDelta\(void 0,"(?:\\"|[^"])*"\+\1\+"\\n"\)\)\}catch\(_\)\{\};/g;
+const ROUTE_HINT_HANDLE_PATCH_RE =
+  /handleRoutedModel\(([A-Za-z_$][\w$]*)\)\{if\(\1\.length===0\)return;this\.pendingRoutedModelLabel=\1;\/\*ROUTE_HINT_V1\*\/try\{this\._routeHintLast!==\1&&\(this\._routeHintLast=\1,this\.handleTextDelta\(void 0,"(?:\\"|[^"])*"\+\1\+"\\n"\)\)\}catch\(_\)\{\};/g;
+const ROUTE_HINT_STATUS_RE =
+  /([A-Za-z_$][\w$]*)\.serviceStatusUpdate&&([A-Za-z_$][\w$]*)\.push\(\{kind:"hostRow",id:`\$\{([A-Za-z_$][\w$]*)\}:service-status`,sourceIds:([A-Za-z_$][\w$]*),subtype:"serviceStatus",content:"Status update"\}/g;
+const ROUTE_HINT_STATUS_PATCH_RE =
+  /([A-Za-z_$][\w$]*)\.serviceStatusUpdate&&([A-Za-z_$][\w$]*)\.push\(\{kind:"hostRow",id:`\$\{([A-Za-z_$][\w$]*)\}:service-status`,sourceIds:([A-Za-z_$][\w$]*),subtype:"serviceStatus",content:\/\*ROUTE_HINT_V1\*\/\(\1\.serviceStatusUpdate\.message\|\|"Status update"\)\}/g;
+
+function routeHintInjectCall(v) {
+  return (
+    "try{this._routeHintLast!==" + v + "&&(this._routeHintLast=" + v +
+    ",this.handleTextDelta(void 0," + JSON.stringify(ROUTE_HINT_LINE) + "+" + v + "+\"\\n\"))}catch(_){};"
+  );
+}
+
+function routeHintHandlePatched(v) {
+  return (
+    "handleRoutedModel(" + v + "){if(" + v + ".length===0)return;" +
+    "this.pendingRoutedModelLabel=" + v + ";" +
+    ROUTE_HINT_MARKER +
+    routeHintInjectCall(v)
+  );
+}
+
+function applyRouteHint(content, stats) {
+  // 3.19.13 官方已有「Routed to …」+ 点赞行（routedModelLabel）。
+  // 再往气泡 handleTextDelta 塞 `> grok-bot route to` 会变成 markdown 引用竖杠，
+  // 和下方正文叠在一起。注入时拆掉旧气泡行，不再打回去。
+  let next = content.replace(ROUTE_HINT_HANDLE_PATCH_RE, (full, v) => {
+    stats.route_hint += 1;
+    return (
+      "handleRoutedModel(" + v + "){if(" + v + ".length===0)return;" +
+      "this.pendingRoutedModelLabel=" + v + ";"
+    );
+  });
+  next = next.replace(ROUTE_HINT_HANDLE_PAYLOAD_RE, () => {
+    stats.route_hint += 1;
+    return "";
+  });
+  next = next.replace(ROUTE_HINT_STATUS_RE, (full, obj, arr, bid, src) => {
+    stats.route_hint += 1;
+    return (
+      obj + ".serviceStatusUpdate&&" + arr +
+      ".push({kind:\"hostRow\",id:`${" + bid + "}:service-status`,sourceIds:" + src +
+      ",subtype:\"serviceStatus\",content:" + ROUTE_HINT_MARKER +
+      "(" + obj + ".serviceStatusUpdate.message||\"Status update\")}"
+    );
+  });
+  const labelCount = next.split(ROUTE_LABEL_ORIGINAL).length - 1;
+  if (labelCount) {
+    next = next.split(ROUTE_LABEL_ORIGINAL).join(ROUTE_LABEL_PATCHED);
+    stats.route_label += labelCount;
+  }
+  return next;
+}
+
+function removeRouteHint(content, stats) {
+  let next = content.replace(ROUTE_HINT_HANDLE_PATCH_RE, (full, v) => {
+    stats.route_hint += 1;
+    return (
+      "handleRoutedModel(" + v + "){if(" + v + ".length===0)return;" +
+      "this.pendingRoutedModelLabel=" + v + ";"
+    );
+  });
+  next = next.replace(ROUTE_HINT_STATUS_PATCH_RE, (full, obj, arr, bid, src) => {
+    stats.route_hint += 1;
+    return (
+      obj + ".serviceStatusUpdate&&" + arr +
+      ".push({kind:\"hostRow\",id:`${" + bid + "}:service-status`,sourceIds:" + src +
+      ",subtype:\"serviceStatus\",content:\"Status update\"}"
+    );
+  });
+  const labelCount = next.split(ROUTE_LABEL_PATCHED).length - 1;
+  if (labelCount) {
+    next = next.split(ROUTE_LABEL_PATCHED).join(ROUTE_LABEL_ORIGINAL);
+    stats.route_label += labelCount;
+  }
+  return next;
+}
 
 const CLIENT_MARKER_GUARD = /\/\*[A-Z0-9_]*SAND_CLIENT(?:_(?:MODE|EXISTING))?_V1\*\//;
 const ELIGIBILITY_MARKER_RE = /return!1;\/\*[A-Z0-9_]*SAND_ELIGIBILITY(?:_MODE)?_V1\*\//g;
@@ -51,6 +139,7 @@ const TARGET_SPECS = [
   { rel: path.join("extensions", "cursor-agent-host", "dist", "657.js") },
   { rel: path.join("extensions", "cursor-agent-host", "dist", "61.js") },
   { rel: path.join("extensions", "cursor-agent-host", "dist", "675.js") },
+  { rel: path.join("extensions", "cursor-agent-host", "dist", "4884.js") },
 ];
 
 const EXT_HOST_REL = path.join("out", "vs", "workbench", "api", "node", "extensionHostProcess.js");
@@ -63,19 +152,37 @@ const ELIGIBILITY_PREFIXES = [
   "function HSy(t){const{adminSettingsService:e",
   "function Q_f(e){const{adminSettingsService:t",
   "function BpS(t){const{adminSettingsService:e",
+  "function Z1S(t){const{adminSettingsService:e",
+  "function m$f(e){const{adminSettingsService:t",
 ];
+const ELIGIBILITY_GENERIC_RE =
+  /function ([A-Za-z_$][\w$]*)\(([A-Za-z_$])\)\{const\{adminSettingsService:([A-Za-z_$])/g;
 
 const MANAGED_LOCAL_ROUTE_ORIGINAL =
   'try{return(yield o.checkFeatureGate(ae))?{runtime:"managed-local",reason:"eligible"}:{runtime:"connect",reason:"gate-off"}}catch(e)';
 const MANAGED_LOCAL_ROUTE_PATCHED =
   "try{return" + SAND_MANAGED_LOCAL_ROUTE_MARKER + '{runtime:"managed-local",reason:"sand-client"}}catch(e)';
 
+// 3.19.13：gate-off 会先 return connect，只改 eligible 不够。插入 early-return，原文原样留下便于卸载。
+const MANAGED_LOCAL_ROUTE_319_ANCHOR =
+  'if(!o)return{runtime:"connect",reason:"gate-off"};const s=g(t),i=A(s,e,r);return void 0!==i?f(i,s):{runtime:"managed-local",reason:"eligible"}';
+const MANAGED_LOCAL_ROUTE_319_PATCHED =
+  "return" +
+  SAND_MANAGED_LOCAL_ROUTE_MARKER +
+  '{runtime:"managed-local",reason:"sand-client"};' +
+  MANAGED_LOCAL_ROUTE_319_ANCHOR;
+
 const LOCAL_RUNTIME_LOAD_ORIGINAL = "let t=!1;try{t=await r.cursor.checkFeatureGate(Ds)}";
 const LOCAL_RUNTIME_LOAD_PATCHED = "let t=!0;" + SAND_LOCAL_RUNTIME_LOAD_MARKER + "try{t=!0}";
+const LOCAL_RUNTIME_LOAD_319_ORIGINAL = "let t=!1;try{t=await r.cursor.checkFeatureGate(Ms)}";
+const LOCAL_RUNTIME_LOAD_319_PATCHED = "let t=!0;" + SAND_LOCAL_RUNTIME_LOAD_MARKER + "/*Ms*/try{t=!0}";
 
 const AGENT_HOST_MOVE_EXEC_ORIGINAL =
   "p=await Promise.resolve(r.cursor.checkFeatureGate(Us)).catch(()=>!1)";
 const AGENT_HOST_MOVE_EXEC_PATCHED = "p=!0" + SAND_AGENT_HOST_MOVE_EXEC_MARKER;
+const AGENT_HOST_MOVE_EXEC_319_ORIGINAL =
+  "h=await Promise.resolve(r.cursor.checkFeatureGate(Js)).catch(()=>!1)";
+const AGENT_HOST_MOVE_EXEC_319_PATCHED = "h=!0" + SAND_AGENT_HOST_MOVE_EXEC_MARKER + "/*Js*/";
 
 const AGENT_HOST_IDENTITY_ORIGINAL = 'clientIdentity:{clientType:"ide"}';
 const AGENT_HOST_IDENTITY_PATCHED =
@@ -116,12 +223,45 @@ const MANAGED_ACTION_ROUTE_PATCHED =
   'e.hasModelCredentials?"private-model-not-supported":' +
   'e.hasUnsupportedRunOptions?"run-options-not-supported":void 0';
 
+// 3.19.13：background 已在 A() 里单独放行；这里补 summarize/resume。
+const MANAGED_ACTION_ROUTE_319_ORIGINAL =
+  '"userMessageAction"!==e.actionCase?"action-not-supported":' +
+  "function(e){return e.requestedMode===o.xy.AGENT||e.isHostedSubagentChild&&e.requestedMode===o.xy.UNSPECIFIED}(e)?" +
+  'e.simulatedUserMessage?"simulated-message-not-supported":y(e,r):"mode-not-supported"';
+const MANAGED_ACTION_ROUTE_319_PATCHED =
+  SAND_MANAGED_ACTION_ROUTE_MARKER +
+  '!["userMessageAction","summarizeAction","resumeAction"].includes(e.actionCase)?' +
+  '"action-not-supported":' +
+  '"userMessageAction"===e.actionCase&&' +
+  "!(e.requestedMode===o.xy.AGENT||e.isHostedSubagentChild&&e.requestedMode===o.xy.UNSPECIFIED)?" +
+  '"mode-not-supported":' +
+  '"userMessageAction"===e.actionCase&&e.simulatedUserMessage?"simulated-message-not-supported":y(e,r)';
+
+const MANAGED_SUBAGENT_ROUTE_319_ANCHOR =
+  "isHostedSubagentChild:Boolean(e.runOptions.subagentTypeName||e.runOptions.parentAgentToolCallId)";
+const MANAGED_SUBAGENT_ROUTE_319_PATCHED =
+  MANAGED_SUBAGENT_ROUTE_319_ANCHOR + SAND_MANAGED_SUBAGENT_ROUTE_MARKER;
+
+const MANAGED_SUBAGENT_SESSION_319_ANCHOR =
+  "outputNotificationLimit:1e3,useClientSideSubagent:!0}";
+const MANAGED_SUBAGENT_SESSION_319_PATCHED =
+  "outputNotificationLimit:1e3,useClientSideSubagent:!0" +
+  SAND_MANAGED_SUBAGENT_SESSION_MARKER +
+  "}";
+
+const MANAGED_TASK_TOOL_319_ORIGINAL =
+  "isGenerateImageModelRestricted:!1,taskToolProps:Ne({parentModelId:null!=p?p:n.modelName,modelInfo:n})},resolvers:";
+const MANAGED_TASK_TOOL_319_PATCHED =
+  "isGenerateImageModelRestricted:!1,taskToolProps:Object.assign(Ne({parentModelId:null!=p?p:n.modelName,modelInfo:n}),{isModelBlocked:()=>!1})" +
+  SAND_MANAGED_TASK_TOOL_MARKER +
+  "},resolvers:";
+
 const SUBAGENT_RESUME_MODE_RE =
-  /e\.resumeAgentId&&e\.mode===([A-Za-z_$][\w$]*)\.FL\.UNSPECIFIED&&!e\.readonly\?oe\.xyI\.UNSPECIFIED:/g;
+  /e\.resumeAgentId&&e\.mode===([A-Za-z_$][\w$]*)\.FL\.UNSPECIFIED&&!e\.readonly\?([A-Za-z_$][\w$]*)\.(xyI|xy)\.UNSPECIFIED:/g;
 const SUBAGENT_RESUME_MODE_PATCH_RE = new RegExp(
   "e\\.resumeAgentId&&e\\.mode===([A-Za-z_$][\\w$]*)\\.FL\\.UNSPECIFIED&&!e\\.readonly\\?" +
     SAND_SUBAGENT_RESUME_MODE_MARKER.replace(/[/*]/g, "\\$&") +
-    "oe\\.xyI\\.AGENT:",
+    "([A-Za-z_$][\\w$]*)\\.(xyI|xy)\\.AGENT:",
   "g"
 );
 
@@ -149,7 +289,7 @@ const MANAGED_TASK_TOOL_ORIGINAL =
   "isGenerateImageModelRestricted:!1,taskToolProps:void 0},resolvers:";
 
 const DIRECT_STREAM_ANCHOR_RE =
-  /function ([A-Za-z_$][\w$]*)\(e\)\{return t=>\{return n=this,o=void 0,s=function\*\(\)\{/;
+  /function ([A-Za-z_$][\w$]*)\(e\)\{return t=>\{return n=this,([a-z])=void 0,s=function\*\(\)\{/;
 
 // push_req_context 超时：缓存未命中时 getPushedRulesProto 最多等 1e4ms（10s），
 // 走 Bot 时常等满。改成 50ms 作为安全网（预填充补丁通常让 peek 直接命中，不走这条路）。
@@ -223,6 +363,8 @@ function emptyStats() {
     subagent_completion_wake: 0,
     push_context_timeout: 0,
     rules_preseed: 0,
+    route_hint: 0,
+    route_label: 0,
   };
 }
 
@@ -248,7 +390,9 @@ function sumStats(s) {
     s.subagent_resume_mode +
     s.subagent_completion_wake +
     s.push_context_timeout +
-    s.rules_preseed
+    s.rules_preseed +
+    s.route_hint +
+    s.route_label
   );
 }
 
@@ -345,6 +489,92 @@ function directStreamInjection() {
   );
 }
 
+function directStreamInjection319Legacy() {
+  return (
+    "{" +
+    SAND_DIRECT_STREAM_MARKER +
+    "const req=t.requestedModel;" +
+    'if(void 0===req)throw new Error("Sand direct Stream requires requestedModel");' +
+    'const mid=String(req.modelId||""),low=mid.toLowerCase(),' +
+    "pmap=new Map((req.parameters||[]).map(e=>[e.id,e.value]))," +
+    "sess=new J(e,req,void 0,void 0).getSession()," +
+    "tools={getExecutor:x=>new o.Ycw(sess.getExecutor(x))}," +
+    'meta={vendor:low.includes("grok")?"xai":low.includes("gemini")?"gemini":' +
+    'low.includes("claude")||low.includes("opus")||low.includes("sonnet")||low.includes("fable")?' +
+    '"anthropic":low.includes("gpt")||low.includes("codex")?"openai":"unknown",' +
+    'promptVersion:"latest",reasoningEffort:pmap.get("effort"),' +
+    'isGrok45ProductPrompt:low.includes("grok"),' +
+    'isClaude4x:low.includes("claude")||low.includes("opus")||low.includes("sonnet")||low.includes("fable"),' +
+    'isFable5:low.includes("fable-5"),' +
+    'isOpus5:low.includes("opus-5")||low.includes("opus5"),' +
+    'isOpus48:low.includes("opus-4.8")||low.includes("opus48"),' +
+    'isOpus46:low.includes("opus-4.6")||low.includes("opus46"),' +
+    'isOpus45:low.includes("opus-4.5")||low.includes("opus45"),' +
+    'isSonnet45:low.includes("sonnet-4.5")||low.includes("sonnet45"),' +
+    'isSonnet4:low.includes("sonnet-4")||low.includes("sonnet4"),' +
+    'isGemini3:low.includes("gemini-3")||low.includes("gemini3"),' +
+    'isGpt56:low.includes("gpt-5.6")||low.includes("gpt5.6"),' +
+    'isGpt55:low.includes("gpt-5.5")||low.includes("gpt5.5"),' +
+    'isGpt54:low.includes("gpt-5.4")||low.includes("gpt5.4"),' +
+    'isGpt53Codex:low.includes("gpt-5.3-codex"),' +
+    'isGpt52Codex:low.includes("gpt-5.2-codex"),' +
+    'isCodexFamily:low.includes("codex"),isGpt5Family:low.includes("gpt-5")};' +
+    "return{promptSession:sess,promptToolSession:tools,attempt:{resolvedModel:req," +
+    "supportsSelfSummary:!1,routedModelDisplayName:mid," +
+    "resolvedModelMetadata:oe(meta,mid)," +
+    "finish:()=>Promise.resolve()}}}"
+  );
+}
+
+function directStreamInjection319() {
+  return (
+    "{" +
+    SAND_DIRECT_STREAM_MARKER +
+    "const req=t.requestedModel;" +
+    'if(void 0===req)throw new Error("Sand direct Stream requires requestedModel");' +
+    'const mid=String(req.modelId||""),low=mid.toLowerCase(),' +
+    "pmap=new Map((req.parameters||[]).map(e=>[e.id,e.value]))," +
+    "sess=new J(e,req,void 0,void 0).getSession()," +
+    "tools={getExecutor:x=>new o.Ycw(sess.getExecutor(x))}," +
+    'grok46=low.includes("grok")&&(low.includes("4.6")||low.includes("grok46")),' +
+    'meta={vendor:low.includes("grok")?"xai":low.includes("gemini")?"gemini":' +
+    'low.includes("claude")||low.includes("opus")||low.includes("sonnet")||low.includes("fable")?' +
+    '"anthropic":low.includes("gpt")||low.includes("codex")?"openai":"unknown",' +
+    'promptVersion:"latest",reasoningEffort:pmap.get("effort"),' +
+    "isGrok45ProductPrompt:low.includes(\"grok\")&&!grok46," +
+    "isGrok46ProductPrompt:grok46," +
+    'isClaude4x:low.includes("claude")||low.includes("opus")||low.includes("sonnet")||low.includes("fable"),' +
+    'isFable5:low.includes("fable-5"),' +
+    'isOpus5:low.includes("opus-5")||low.includes("opus5"),' +
+    'isOpus48:low.includes("opus-4.8")||low.includes("opus48"),' +
+    'isOpus46:low.includes("opus-4.6")||low.includes("opus46"),' +
+    'isOpus45:low.includes("opus-4.5")||low.includes("opus45"),' +
+    'isSonnet45:low.includes("sonnet-4.5")||low.includes("sonnet45"),' +
+    'isSonnet4:low.includes("sonnet-4")||low.includes("sonnet4"),' +
+    'isGemini3:low.includes("gemini-3")||low.includes("gemini3"),' +
+    'isGpt56:low.includes("gpt-5.6")||low.includes("gpt5.6"),' +
+    'isGpt55:low.includes("gpt-5.5")||low.includes("gpt5.5"),' +
+    'isGpt54:low.includes("gpt-5.4")||low.includes("gpt5.4"),' +
+    'isGpt53Codex:low.includes("gpt-5.3-codex"),' +
+    'isGpt52Codex:low.includes("gpt-5.2-codex"),' +
+    'isCodexFamily:low.includes("codex"),isGpt5Family:low.includes("gpt-5")};' +
+    "return{promptSession:sess,promptToolSession:tools,attempt:{resolvedModel:req," +
+    "supportsSelfSummary:!1,routedModelDisplayName:mid," +
+    "resolvedModelMetadata:{promptModelInfo:oe(meta,mid),useDsv3Harness:!1}," +
+    "finish:()=>Promise.resolve()}}}"
+  );
+}
+
+function pickDirectStreamInjection(content) {
+  if (content.includes("class J{constructor(e,t,n,o)") && content.includes(".Ycw(")) {
+    return directStreamInjection319();
+  }
+  if (content.includes("new Joe(") || content.includes("function gre(") || content.includes("function hre(")) {
+    return directStreamInjection();
+  }
+  return null;
+}
+
 function replaceClientRule(content, stats, key, re) {
   return content.replace(re, (full, prefix, quote, current) => {
     const end = full.slice((prefix + quote + current + quote).length);
@@ -407,11 +637,26 @@ function applySandPatches(content) {
     next = next.split(prefix).join(patched);
     stats.eligibility += count;
   }
+  next = next.replace(ELIGIBILITY_GENERIC_RE, (full) => {
+    if (full.includes(SAND_ELIGIBILITY_MARKER)) return full;
+    stats.eligibility += 1;
+    return full.replace(
+      "{const{adminSettingsService:",
+      "{return!1;" + SAND_ELIGIBILITY_MARKER + "const{adminSettingsService:"
+    );
+  });
 
   const routeCount = next.split(MANAGED_LOCAL_ROUTE_ORIGINAL).length - 1;
   if (routeCount) {
     next = next.split(MANAGED_LOCAL_ROUTE_ORIGINAL).join(MANAGED_LOCAL_ROUTE_PATCHED);
     stats.managed_local_route += routeCount;
+  }
+  if (!next.includes(SAND_MANAGED_LOCAL_ROUTE_MARKER)) {
+    const route319 = next.split(MANAGED_LOCAL_ROUTE_319_ANCHOR).length - 1;
+    if (route319) {
+      next = next.split(MANAGED_LOCAL_ROUTE_319_ANCHOR).join(MANAGED_LOCAL_ROUTE_319_PATCHED);
+      stats.managed_local_route += route319;
+    }
   }
 
   const runtimeCount = next.split(LOCAL_RUNTIME_LOAD_ORIGINAL).length - 1;
@@ -419,11 +664,25 @@ function applySandPatches(content) {
     next = next.split(LOCAL_RUNTIME_LOAD_ORIGINAL).join(LOCAL_RUNTIME_LOAD_PATCHED);
     stats.local_runtime_load += runtimeCount;
   }
+  if (!next.includes(SAND_LOCAL_RUNTIME_LOAD_MARKER)) {
+    const runtime319 = next.split(LOCAL_RUNTIME_LOAD_319_ORIGINAL).length - 1;
+    if (runtime319) {
+      next = next.split(LOCAL_RUNTIME_LOAD_319_ORIGINAL).join(LOCAL_RUNTIME_LOAD_319_PATCHED);
+      stats.local_runtime_load += runtime319;
+    }
+  }
 
   const moveExecCount = next.split(AGENT_HOST_MOVE_EXEC_ORIGINAL).length - 1;
   if (moveExecCount) {
     next = next.split(AGENT_HOST_MOVE_EXEC_ORIGINAL).join(AGENT_HOST_MOVE_EXEC_PATCHED);
     stats.agent_host_move_exec += moveExecCount;
+  }
+  if (!next.includes(SAND_AGENT_HOST_MOVE_EXEC_MARKER)) {
+    const move319 = next.split(AGENT_HOST_MOVE_EXEC_319_ORIGINAL).length - 1;
+    if (move319) {
+      next = next.split(AGENT_HOST_MOVE_EXEC_319_ORIGINAL).join(AGENT_HOST_MOVE_EXEC_319_PATCHED);
+      stats.agent_host_move_exec += move319;
+    }
   }
 
   if (CLIENT_SUBAGENT_ENABLED) {
@@ -438,12 +697,27 @@ function applySandPatches(content) {
     next = next.split(MANAGED_ACTION_ROUTE_ORIGINAL).join(MANAGED_ACTION_ROUTE_PATCHED);
     stats.managed_action_route += actionRouteCount;
   }
+  if (!next.includes(SAND_MANAGED_ACTION_ROUTE_MARKER)) {
+    const action319 = next.split(MANAGED_ACTION_ROUTE_319_ORIGINAL).length - 1;
+    if (action319) {
+      next = next.split(MANAGED_ACTION_ROUTE_319_ORIGINAL).join(MANAGED_ACTION_ROUTE_319_PATCHED);
+      stats.managed_action_route += action319;
+    }
+  }
+
+  if (!next.includes(SAND_MANAGED_SUBAGENT_ROUTE_MARKER)) {
+    const sub319 = next.split(MANAGED_SUBAGENT_ROUTE_319_ANCHOR).length - 1;
+    if (sub319) {
+      next = next.split(MANAGED_SUBAGENT_ROUTE_319_ANCHOR).join(MANAGED_SUBAGENT_ROUTE_319_PATCHED);
+      stats.managed_subagent_route += sub319;
+    }
+  }
 
   if (!next.includes(SAND_SUBAGENT_RESUME_MODE_MARKER)) {
-    next = next.replace(SUBAGENT_RESUME_MODE_RE, (full, ident) => {
+    next = next.replace(SUBAGENT_RESUME_MODE_RE, (full, ident, modeObj, xy) => {
       stats.subagent_resume_mode += 1;
       return "e.resumeAgentId&&e.mode===" + ident + ".FL.UNSPECIFIED&&!e.readonly?" +
-        SAND_SUBAGENT_RESUME_MODE_MARKER + "oe.xyI.AGENT:";
+        SAND_SUBAGENT_RESUME_MODE_MARKER + modeObj + "." + xy + ".AGENT:";
     });
   }
 
@@ -469,6 +743,13 @@ function applySandPatches(content) {
         SAND_MANAGED_SUBAGENT_SESSION_MARKER + "};";
     });
   }
+  if (!next.includes(SAND_MANAGED_SUBAGENT_SESSION_MARKER)) {
+    const sess319 = next.split(MANAGED_SUBAGENT_SESSION_319_ANCHOR).length - 1;
+    if (sess319) {
+      next = next.split(MANAGED_SUBAGENT_SESSION_319_ANCHOR).join(MANAGED_SUBAGENT_SESSION_319_PATCHED);
+      stats.managed_subagent_session += sess319;
+    }
+  }
 
   for (const previous of [managedTaskToolPatchedV125(), managedTaskToolPatchedV124()]) {
     const migrated = next.split(previous).length - 1;
@@ -483,6 +764,13 @@ function applySandPatches(content) {
     next = next.split(MANAGED_TASK_TOOL_ORIGINAL).join(managedTaskToolPatched());
     stats.managed_task_tool += taskToolCount;
   }
+  if (!next.includes(SAND_MANAGED_TASK_TOOL_MARKER)) {
+    const task319 = next.split(MANAGED_TASK_TOOL_319_ORIGINAL).length - 1;
+    if (task319) {
+      next = next.split(MANAGED_TASK_TOOL_319_ORIGINAL).join(MANAGED_TASK_TOOL_319_PATCHED);
+      stats.managed_task_tool += task319;
+    }
+  }
   }
 
   const identityCount = next.split(AGENT_HOST_IDENTITY_ORIGINAL).length - 1;
@@ -491,9 +779,18 @@ function applySandPatches(content) {
     stats.agent_host_identity += identityCount;
   }
 
-  if (!next.includes(SAND_DIRECT_STREAM_MARKER) && DIRECT_STREAM_ANCHOR_RE.test(next)) {
-    next = next.replace(DIRECT_STREAM_ANCHOR_RE, (match) => match + directStreamInjection());
+  const oldDirect319 = directStreamInjection319Legacy();
+  if (next.includes(oldDirect319)) {
+    next = next.split(oldDirect319).join(directStreamInjection319());
     stats.direct_stream += 1;
+  }
+
+  if (!next.includes(SAND_DIRECT_STREAM_MARKER) && DIRECT_STREAM_ANCHOR_RE.test(next)) {
+    const injection = pickDirectStreamInjection(next);
+    if (injection) {
+      next = next.replace(DIRECT_STREAM_ANCHOR_RE, (match) => match + injection);
+      stats.direct_stream += 1;
+    }
   }
 
   if (!next.includes(SAND_AGENT_HOST_ENABLEMENT_MARKER)) {
@@ -504,6 +801,7 @@ function applySandPatches(content) {
   }
 
   next = applyPushContextTimeout(next, stats);
+  next = applyRouteHint(next, stats);
 
   if (!next.includes(SAND_RULES_PRESEED_MARKER)) {
     const preseedCount = next.split(RULES_PRESEED_ORIGINAL).length - 1;
@@ -555,13 +853,28 @@ function removeSandPatches(content) {
     next = next.split(MANAGED_LOCAL_ROUTE_PATCHED).join(MANAGED_LOCAL_ROUTE_ORIGINAL);
     stats.managed_local_route += routeCount;
   }
+  const route319 = next.split(MANAGED_LOCAL_ROUTE_319_PATCHED).length - 1;
+  if (route319) {
+    next = next.split(MANAGED_LOCAL_ROUTE_319_PATCHED).join(MANAGED_LOCAL_ROUTE_319_ANCHOR);
+    stats.managed_local_route += route319;
+  }
 
+  const runtime319 = next.split(LOCAL_RUNTIME_LOAD_319_PATCHED).length - 1;
+  if (runtime319) {
+    next = next.split(LOCAL_RUNTIME_LOAD_319_PATCHED).join(LOCAL_RUNTIME_LOAD_319_ORIGINAL);
+    stats.local_runtime_load += runtime319;
+  }
   const runtimeCount = next.split(LOCAL_RUNTIME_LOAD_PATCHED).length - 1;
   if (runtimeCount) {
     next = next.split(LOCAL_RUNTIME_LOAD_PATCHED).join(LOCAL_RUNTIME_LOAD_ORIGINAL);
     stats.local_runtime_load += runtimeCount;
   }
 
+  const move319 = next.split(AGENT_HOST_MOVE_EXEC_319_PATCHED).length - 1;
+  if (move319) {
+    next = next.split(AGENT_HOST_MOVE_EXEC_319_PATCHED).join(AGENT_HOST_MOVE_EXEC_319_ORIGINAL);
+    stats.agent_host_move_exec += move319;
+  }
   const moveExecCount = next.split(AGENT_HOST_MOVE_EXEC_PATCHED).length - 1;
   if (moveExecCount) {
     next = next.split(AGENT_HOST_MOVE_EXEC_PATCHED).join(AGENT_HOST_MOVE_EXEC_ORIGINAL);
@@ -573,16 +886,27 @@ function removeSandPatches(content) {
     next = next.split(MANAGED_SUBAGENT_ROUTE_PATCHED).join(MANAGED_SUBAGENT_ROUTE_ORIGINAL);
     stats.managed_subagent_route += subagentRouteCount;
   }
+  const sub319 = next.split(MANAGED_SUBAGENT_ROUTE_319_PATCHED).length - 1;
+  if (sub319) {
+    next = next.split(MANAGED_SUBAGENT_ROUTE_319_PATCHED).join(MANAGED_SUBAGENT_ROUTE_319_ANCHOR);
+    stats.managed_subagent_route += sub319;
+  }
 
   const actionRouteCount = next.split(MANAGED_ACTION_ROUTE_PATCHED).length - 1;
   if (actionRouteCount) {
     next = next.split(MANAGED_ACTION_ROUTE_PATCHED).join(MANAGED_ACTION_ROUTE_ORIGINAL);
     stats.managed_action_route += actionRouteCount;
   }
+  const action319 = next.split(MANAGED_ACTION_ROUTE_319_PATCHED).length - 1;
+  if (action319) {
+    next = next.split(MANAGED_ACTION_ROUTE_319_PATCHED).join(MANAGED_ACTION_ROUTE_319_ORIGINAL);
+    stats.managed_action_route += action319;
+  }
 
-  next = next.replace(SUBAGENT_RESUME_MODE_PATCH_RE, (full, ident) => {
+  next = next.replace(SUBAGENT_RESUME_MODE_PATCH_RE, (full, ident, modeObj, xy) => {
     stats.subagent_resume_mode += 1;
-    return "e.resumeAgentId&&e.mode===" + ident + ".FL.UNSPECIFIED&&!e.readonly?oe.xyI.UNSPECIFIED:";
+    return "e.resumeAgentId&&e.mode===" + ident + ".FL.UNSPECIFIED&&!e.readonly?" +
+      modeObj + "." + xy + ".UNSPECIFIED:";
   });
 
   next = next.replace(SUBAGENT_COMPLETION_WAKE_PATCH_RE, (full, variable) => {
@@ -595,6 +919,11 @@ function removeSandPatches(content) {
     );
   });
 
+  const task319 = next.split(MANAGED_TASK_TOOL_319_PATCHED).length - 1;
+  if (task319) {
+    next = next.split(MANAGED_TASK_TOOL_319_PATCHED).join(MANAGED_TASK_TOOL_319_ORIGINAL);
+    stats.managed_task_tool += task319;
+  }
   const taskV2 = managedTaskToolPatched();
   const taskV2Count = next.split(taskV2).length - 1;
   if (taskV2Count) {
@@ -615,6 +944,11 @@ function removeSandPatches(content) {
       "enableReadToolNegativeOffset:!0,enableSandboxSharedBuildCache:!0," +
       "nalLoopDetection:!0};";
   });
+  const sess319 = next.split(MANAGED_SUBAGENT_SESSION_319_PATCHED).length - 1;
+  if (sess319) {
+    next = next.split(MANAGED_SUBAGENT_SESSION_319_PATCHED).join(MANAGED_SUBAGENT_SESSION_319_ANCHOR);
+    stats.managed_subagent_session += sess319;
+  }
 
   const identityCount = next.split(AGENT_HOST_IDENTITY_PATCHED).length - 1;
   if (identityCount) {
@@ -622,11 +956,16 @@ function removeSandPatches(content) {
     stats.agent_host_identity += identityCount;
   }
 
-  const injection = directStreamInjection();
-  const directCount = next.split(injection).length - 1;
-  if (directCount) {
-    next = next.split(injection).join("");
-    stats.direct_stream += directCount;
+  for (const injection of [
+    directStreamInjection(),
+    directStreamInjection319(),
+    directStreamInjection319Legacy()
+  ]) {
+    const directCount = next.split(injection).length - 1;
+    if (directCount) {
+      next = next.split(injection).join("");
+      stats.direct_stream += directCount;
+    }
   }
 
   next = next.replace(AGENT_HOST_ENABLEMENT_PATCH_RE, (full, variable, left, comma) => {
@@ -635,6 +974,7 @@ function removeSandPatches(content) {
   });
 
   next = removePushContextTimeout(next, stats);
+  next = removeRouteHint(next, stats);
 
   const preseedCount = next.split(RULES_PRESEED_PATCHED).length - 1;
   if (preseedCount) {
@@ -670,6 +1010,8 @@ function detectSand(content) {
     completionWake: countOf(content, SAND_SUBAGENT_COMPLETION_WAKE_MARKER),
     pushContextTimeout: countOf(content, SAND_PUSH_CONTEXT_TIMEOUT_MARKER),
     rulesPreseed: countOf(content, SAND_RULES_PRESEED_MARKER),
+    routeHint: countOf(content, ROUTE_HINT_MARKER),
+    routeLabel: countOf(content, ROUTE_LABEL_MARKER),
     legacy: countOf(content, LEGACY_SAND_CLIENT_MARKER) + countOf(content, LEGACY_SAND_ELIGIBILITY_MARKER),
   };
 }
@@ -694,6 +1036,8 @@ function hasSandMarkers(content) {
       d.completionWake +
       d.pushContextTimeout +
       d.rulesPreseed +
+      d.routeHint +
+      d.routeLabel +
       d.legacy >
     0
   );
@@ -723,9 +1067,9 @@ function streamLifecycleInstalled(d) {
   );
 }
 
-// 一次完整注入在 3.18.9 上每个生命周期补丁应命中的次数（与 sand_stream_installer 1.2.6 的
-// 安装后校验一致：单点补丁各 1，agentHost/completionWake 在 desktop+glass 两个 workbench 各 1 = 2）。
-// 用它做“注入前预检”：只要开始打 stream，就必须全部齐，缺哪条直接拒绝写入，绝不半补丁。
+// 一次完整注入在 3.18.9 / 3.18.25 / 3.19.13 上每个生命周期补丁应命中的次数
+// （单点各 1，agentHost/completionWake 在 desktop+glass 各 1 = 2）。
+// 注入前预检：缺哪条拒写，绝不半补丁。
 const EXPECTED_LIFECYCLE = {
   managedLocal: 1,
   runtimeLoad: 1,
@@ -846,4 +1190,6 @@ module.exports = {
   managedTaskToolPatchedV125,
   countUnpatchedPushContextTimeout,
   SAND_PUSH_CONTEXT_TIMEOUT_MARKER,
+  directStreamInjection319,
+  directStreamInjection319Legacy,
 };
