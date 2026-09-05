@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>账号管理 · 界面预览</title>
-  <link rel="stylesheet" href="media/webview.css?v=229">
+  <link rel="stylesheet" href="media/webview.css?v=2320">
   <style>
     body{display:flex;flex-direction:column;background:#07090d}
     .previewBar{flex:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:#0b0e14;border-bottom:1px solid #30394a;color:#9aa4b8;font:12px/1.4 sans-serif}
@@ -29,34 +29,27 @@
   <div class="stage"><div class="phone" id="phone"><div id="app"></div></div></div>
   <script>
     const previewState = {
-        version: '2.2.9-preview',
-      sand: { patched: false, version: '3.4.20', sand: 0, unpatched: 5, error: '' },
+        version: '2.3.20',
+      sand: { patched: true, version: '3.19.13', sand: 3, unpatched: 0, error: '', streamMode: true, streamLifecycle: true },
       account: { email: 'main@example.com', label: 'g', plan: 'ultra', planLabel: 'Ultra', enabled: true },
       accounts: [
         {
-          id: 'acc_demo1', email: 'main@example.com', userTail: 'a1b2c3d4', type: 'ultra',
+          id: 'acc_demo1', email: 'ultra@example.com', userTail: 'a1b2c3d4', type: 'ultra',
           isCurrent: true, used: 40000, limit: 40000, usageBased: false, hardLimit: null,
-          autoPercent: 66.7, otherPercent: 100, botPercent: 89.4, botHasLimit: true,
-          cycleEnd: new Date(Date.now() + 24 * 86400000).toISOString(),
-          botResetAt: new Date(Date.now() + 3 * 86400000).toISOString(),
-          sessionCount: 1, note: '主力',
+          autoPercent: 66.8, otherPercent: 100, botPercent: 82.4, botHasLimit: true,
+          cycleEnd: new Date(Date.now() + 15 * 86400000).toISOString(),
+          botResetAt: new Date(Date.now() + 1 * 86400000).toISOString(),
+          sessionCount: 1, note: '',
           addedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(), tokenType: 'client', noRefresh: false, source: 'deeplogin'
         },
         {
-          id: 'acc_demo2', email: 'alt@example.com', userTail: '9f8e7d6c', type: 'pro',
+          id: 'acc_demo2', email: 'team@example.com', userTail: '9f8e7d6c', type: 'business',
           isCurrent: false, used: 8000, limit: 20000, usageBased: true, hardLimit: null,
-          autoPercent: 41, otherPercent: 18, botPercent: 12.5, botHasLimit: true,
-          cycleEnd: new Date(Date.now() + 11 * 86400000).toISOString(),
+          autoPercent: 11.1, otherPercent: 100, botPercent: 0.5, botHasLimit: true,
+          cycleEnd: new Date(Date.now() + 27 * 86400000).toISOString(),
           botResetAt: new Date(Date.now() + 6 * 86400000).toISOString(),
-          sessionCount: 2, note: '备用 Pro',
+          sessionCount: 2, note: '',
           addedAt: new Date(Date.now() - 86400 * 1000 * 2).toISOString(), tokenType: 'client', noRefresh: false, source: 'deeplogin'
-        },
-        {
-          id: 'acc_demo3', email: 'web-only@example.com', userTail: '11223344', type: 'free',
-          isCurrent: false, used: 0, limit: 0, usageBased: false, hardLimit: null,
-          autoPercent: 8, otherPercent: 0, botPercent: null, botHasLimit: false,
-          sessionCount: 0, note: '',
-          addedAt: new Date(Date.now() - 86400 * 1000 * 3).toISOString(), tokenType: 'web', noRefresh: true, source: 'cookie'
         }
       ]
     };
@@ -129,6 +122,39 @@
   <script src="media/webview.js"></script>
   <script>
     pushPreviewState();
+    (function () {
+      const q = new URLSearchParams(location.search);
+      if (!q.get('shot')) return;
+      document.documentElement.classList.add('shot');
+      document.body.classList.add('shot');
+      const bar = document.querySelector('.previewBar');
+      if (bar) bar.style.display = 'none';
+      const stage = document.querySelector('.stage');
+      if (stage) { stage.style.padding = '0'; stage.style.justifyContent = 'stretch'; stage.style.alignItems = 'stretch'; }
+      const phone = document.getElementById('phone');
+      if (phone) {
+        phone.style.width = '100%';
+        phone.style.maxWidth = '100%';
+        phone.style.height = '100vh';
+        phone.style.minHeight = '100vh';
+        phone.style.border = 'none';
+        phone.style.borderRadius = '0';
+        phone.style.resize = 'none';
+        phone.style.boxShadow = 'none';
+      }
+      document.body.style.margin = '0';
+      document.body.style.overflow = 'hidden';
+      setTimeout(function () {
+        if (q.get('shot') === 'more') {
+          const btn = document.querySelector('[data-action="acctMore"]');
+          if (btn) btn.click();
+        }
+        if (q.get('shot') === 'sand') {
+          const tab = document.querySelector('[data-action="switchTab"][data-tab="grok"]');
+          if (tab) tab.click();
+        }
+      }, 80);
+    })();
     (function () {
       const phone = document.getElementById('phone');
       const size = document.getElementById('previewSize');

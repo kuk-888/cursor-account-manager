@@ -167,6 +167,7 @@ function emptyStreamTotals() {
     completionWake: 0,
     pushContextTimeout: 0,
     rulesPreseed: 0,
+    routeHint: 0,
     legacy: 0
   };
 }
@@ -228,6 +229,8 @@ const LEFTOVER_MARKERS = [
   'SAND_SUBAGENT_COMPLETION_WAKE_V1',
   'SAND_PUSH_CONTEXT_TIMEOUT_V1',
   'SAND_RULES_PRESEED_V1',
+  'ROUTE_HINT_V1',
+  'ROUTE_LABEL_V1',
   'KC_SAND_CLIENT_V1',
   'KC_SAND_ELIGIBILITY_V1'
 ];
@@ -322,7 +325,7 @@ function projectStreamTotals(appRoot, changes) {
   return totals;
 }
 
-const TESTED_CURSOR_VERSIONS = ['3.18.9', '3.18.25'];
+const TESTED_CURSOR_VERSIONS = ['3.18.9', '3.18.25', '3.19.13'];
 
 function shortfallMessage(shortfall, version) {
   const detail = shortfall.map((item) => `${item.key} ${item.have}/${item.want}`).join('，');

@@ -252,7 +252,7 @@
           : ('未注入 · 还有 ' + esc(s.unpatched || 0) + ' 处仍是 ide')));
     return '<div class="sandCard' + (on ? ' on' : '') + '">'
       + '<div class="sandHead"><h4>Sand 注入</h4><span class="sandBadge ' + badgeCls + '">' + badge + '</span></div>'
-      + '<p class="sandNote">仅兼容 Cursor 3.18.9 / 3.18.25，其他版本未做测试。</p>'
+      + '<p class="sandNote">兼容 Cursor 3.18.9 / 3.18.25 / 3.19.13。卸载兼容更早打过的补丁。</p>'
       + '<p class="sandHint">注入后走 Grok Bot 额度提问。注入前会自动备份，卸载可还原。<b>注入或卸载后必须完全退出 Cursor 再打开</b>（Reload 不够）。</p>'
       + '<div class="sandBtns">'
         + '<button class="btn primary" data-action="sandApplyAsk"' + (on ? ' disabled' : '') + '>一键注入</button>'
@@ -287,7 +287,7 @@
     if (!dialog) return '';
     if (dialog.type === 'confirmSandApply') {
       return '<div class="modal" data-action="cancelDialog"><div class="dialog" data-stop="1"><h3>注入 Sand</h3>'
-        + '<p class="restartMsg">仅兼容 Cursor 3.18.9 / 3.18.25，其他版本未做测试。<br>注入前会自动备份原始文件。<br><b>注入完成后请完全退出 Cursor 再重新打开</b>，只 Reload 不生效。</p>'
+        + '<p class="restartMsg">兼容 Cursor 3.18.9 / 3.18.25 / 3.19.13。<br>注入前会自动备份原始文件。<br><b>注入完成后请完全退出 Cursor 再重新打开</b>，只 Reload 不生效。</p>'
         + '<div class="dialogActions"><button class="btn" data-action="cancelDialog">取消</button><button class="btn primary" data-action="sandApplyConfirm">一键注入</button></div></div></div>';
     }
     if (dialog.type === 'confirmSandRestore') {
