@@ -4,38 +4,19 @@ Cursor 多账号管理插件：一键切号、查看额度、踢设备、Grok Bo
 
 仓库：[github.com/kuk-888/cursor-account-manager](https://github.com/kuk-888/cursor-account-manager)
 
-## 2.3.20
-
-兼容 **Cursor 3.18.9 / 3.18.25 / 3.19.13**。
-
-- 修复 3.19.13 注入失效：界面显示已注入，实际仍走官方慢路径
-- 修复直连流模型元数据格式，避免 `metadata-unavailable`
-- 修复 Grok 4.6 误用 4.5 product prompt
-- 路由提示由 `Routed to` 改为「本次使用」
-
-完整条目见 [CHANGELOG](CHANGELOG.md)。
-
-## 界面
-
-账号列表（Ultra / Business，Auto · Other · Grok Bot 三档额度）：
-
-![账号列表](docs/screenshot-accounts.png)
-
-更多菜单：令牌续期、备注、复制 Token、进控制台、查看设备、切号：
-
-![更多菜单](docs/screenshot-more.png)
-
-Grok Bot 未注入：
-
-![Grok Bot 未注入](docs/screenshot-sand-off.png)
-
-一键注入成功（Cursor 3.19.13 · Stream+Task 已齐），必须完整重启：
-
-![Grok Bot 已注入](docs/screenshot-sand.png)
-
-注入后对话上头会写出本次走的模型：
-
-![本次使用](docs/screenshot-route.png)
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshot-accounts.png" alt="" /></td>
+    <td width="50%"><img src="docs/screenshot-more.png" alt="" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshot-sand-off.png" alt="" /></td>
+    <td><img src="docs/screenshot-sand.png" alt="" /></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="docs/screenshot-route.png" width="50%" alt="" /></td>
+  </tr>
+</table>
 
 ## 功能
 
@@ -57,7 +38,6 @@ Grok Bot 未注入：
 - 提问走 Grok Bot 额度，不消耗 Cursor 订阅额度
 - 响应速度大幅提升（消除 Planning 等待）
 - 支持子代理 / Task / resume 等完整 Agent 能力
-- 聊天气泡把官方 `Routed to` 改成「本次使用」，并显示真实 Status 文案
 
 使用方法：
 1. 侧栏「Grok Bot」页面 → 点**一键注入**
@@ -85,4 +65,3 @@ Grok Bot 未注入：
 - 只与 `cursor.com` 和 `api2.cursor.sh`（Cursor 官方）通信
 - 不含任何第三方分析/追踪代码
 - [源码公开](https://github.com/kuk-888/cursor-account-manager)，欢迎审查
-- VSIX 不含账号、token、本机路径；仓库截图里的邮箱已打码
